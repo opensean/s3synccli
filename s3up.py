@@ -87,8 +87,10 @@ class SmartSync():
         Returns:
             (list): s3 keys.
 
+        TO DO --> needs try, except to handle case when no directories are found
         """
         ## find local directories and sort
+        #try
         d = subprocess.Popen(["find", local, "-type", "d"],
                          stdout = subprocess.PIPE, shell = False)
 
@@ -99,14 +101,41 @@ class SmartSync():
         dLst = dsort.communicate()[0].decode().strip().split('\n')
         return [self.key + k[len(self.local) + 1:] + '/' for k in dLst]
         
-
+        ## no directories found, check for file
+        #except:
+        #    if os.path.isfile(local):
+        #        return [self.key + k[len(self.local) + 1:]]
+        #    else:
+        #        sys.stderr.write(local + "does not exist, exiting...\n")
+        #        sys.exit(1)
 
     def key_exists(self, key = None):
-         return subprocess.Popen(["aws", "s3api", "head-object", "--bucket",
+        """
+        Check if an s3 key exists.
+
+        Args:
+            key (str): s3 key
+
+        Returns:
+            stdout subprocess call to aws s3api head-object
+
+        """
+        return subprocess.Popen(["aws", "s3api", "head-object", "--bucket",
                         self.bucket, "--key", key],
                         stdout = subprocess.PIPE, shell = False)
 
     def meta_check(self, obj_head = None):
+        """
+        Parse the metadata for an s3 object.
+
+        Args:
+            obj_head (stdout): stdout of subprocess call to aws s3api 
+                               head-object.
+
+        Returns:
+            boolean: True metadata exists, False no metadata present.
+
+        """
         meta = json.loads(obj_head.communicate()[0].decode())['Metadata']
 
         if len(meta) == 0:
@@ -115,17 +144,40 @@ class SmartSync():
             return True
 
     def meta_update(self, key = None, metadata = None):
+        """
+        Update the metadata for an s3 object.
+
+        Args:
+            key (str):  s3 key.
+            metadata (json str):  metadata to attach to the object.
+
+
+        """
         subprocess.run(["aws", "s3api", "copy-object", "--bucket",
                     self.bucket, "--key", key, "--copy-source",
                     self.bucket + "/" + key, "--metadata", metadata,
                     "--metadata-directive", "REPLACE"])
 
     def create_key(self, key = None, metadata = None): 
+        """
+        Create an s3 object, also known as put-object.
+
+        Args:
+            key (str):  s3 key.
+            metadata (json str):  metadata to attach to the object.
+
+        """
         subprocess.run(["aws", "s3api", "put-object", "--bucket", self.bucket,
                             "--key", key, "--metadata", metadata])
 
     def verify_keys(self, keys = None, meta = None):
+        """
+        Check if the keys in list exist.  If the do not exist create them.
 
+        Args:
+            keys (lst): list of keys.
+            meta (json str): metadata to attach to the keys
+        """
         for k in keys:
             try:
                 check = self.key_exists(key = k)
@@ -139,7 +191,7 @@ class SmartSync():
                     update = self.meta_update(key = k, metadata = meta)
 
             except:
-                ## key does not exist so lets create it
+                ## key does not exist so lets create it only if directory
                 sys.stderr.write("creating key '" + k + "'\n")
 
                 self.create_key(key = k, metadata = meta)
@@ -154,7 +206,12 @@ class SmartSync():
 
 
     def smart_sync(self):
+        """
+        Completes a sync between a local path and s3 bucket path.
+
+        """
         ## verify the s3path passed as command line arg
+        ## need to add check whether a file or directory was specified
         self.verify_keys(keys = [self.key], meta = self.metadir)
 
         ## verify local dirs converted to s3keys
