@@ -15,13 +15,13 @@ Metadata notes
   method
 
 Usage:
-    s3up <localdir> <s3path> [--metadata METADATA --profile PROFILE]
-    s3up -h | --help 
+    s3sync <localdir> <s3path> [--metadata METADATA --profile PROFILE]
+    s3sync -h | --help 
 
 Options: 
     <localdir>               local directory file path
     <s3path>                  s3 key, e.g. cst-compbio-research-00-buc/
-    --metadata METADATA      metadata in json format [default: {"uid":"6812", "gid":"6812"}]
+    --metadata METADATA      metadata in json format e.g. '{"uid":"6812", "gid":"6812"}'
     --profile PROFILE        aws profile name [default: default]
     -h --help                show this screen.
 """ 
@@ -56,12 +56,24 @@ class SmartS3Sync():
             metadirjs, metafilejs (json): json string specific for dirs and 
                                           files.
 
-        """
-        metadir = json.loads(options['--metadata'])
-        metadir["mode"] = "509"
+        """ 
+        if meta:
+            metadir = json.loads(meta)
+            metafile = json.loads(meta)
+        else:
+            metadir = {}
+            metafile = {}
+        if 'mode' not in metadir:
+            metadir["mode"] = "509"
+            metafile["mode"] = "33204"
+        if 'uid' not in metadir:
+            metadir["uid"] = str(os.geteuid())
+            metafile["uid"] = str(os.geteuid())
+        if 'gid' not in metadir:
+            metadir["gid"] = str(os.getgid())
+            metafile["gid"] = str(os.getgid())
+        
         metadirjs = json.dumps(metadir)
-        metafile = json.loads(options['--metadata'])
-        metafile["mode"] = "33204"
         metafilejs = json.dumps(metafile)
         return metadirjs, metafilejs
 
@@ -191,6 +203,7 @@ class SmartS3Sync():
 
             except:
                 ## key does not exist so lets create it
+                
                 sys.stderr.write("creating key '" + k + "'\n")
 
                 self.create_key(key = k, metadata = meta)
