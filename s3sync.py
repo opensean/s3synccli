@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 ## Sean Landry, sean.d.landry@gmail.com, sean.landry@cellsignal.com
-## version 03june2017
+## version 05june2017
 
 """
-Upload to S3 with metadata.
+Sync local data with S3 maintaining metadata.  This program will accept 
+directories as arguments.
 
 Metadata notes
 - for directories use "mode":"509", mode 33204 does NOT work
@@ -17,7 +18,7 @@ Usage:
 Options: 
     <localdir>               local directory file path
     <s3path>                  s3 key, e.g. cst-compbio-research-00-buc/
-    --metadata METADATA      metadata in json format '{"uid":"6812", "gid":"6812", "mode":"33204"}'
+    --metadata METADATA      metadata in json format [default: {"uid":"6812", "gid":"6812"}]
     -h --help                show this screen.
 """ 
 
@@ -87,10 +88,9 @@ class SmartSync():
         Returns:
             (list): s3 keys.
 
-        TO DO --> needs try, except to handle case when no directories are found
         """
         ## find local directories and sort
-        #try
+        
         d = subprocess.Popen(["find", local, "-type", "d"],
                          stdout = subprocess.PIPE, shell = False)
 
@@ -101,14 +101,6 @@ class SmartSync():
         dLst = dsort.communicate()[0].decode().strip().split('\n')
         return [self.key + k[len(self.local) + 1:] + '/' for k in dLst]
         
-        ## no directories found, check for file
-        #except:
-        #    if os.path.isfile(local):
-        #        return [self.key + k[len(self.local) + 1:]]
-        #    else:
-        #        sys.stderr.write(local + "does not exist, exiting...\n")
-        #        sys.exit(1)
-
     def key_exists(self, key = None):
         """
         Check if an s3 key exists.
@@ -191,7 +183,7 @@ class SmartSync():
                     update = self.meta_update(key = k, metadata = meta)
 
             except:
-                ## key does not exist so lets create it only if directory
+                ## key does not exist so lets create it
                 sys.stderr.write("creating key '" + k + "'\n")
 
                 self.create_key(key = k, metadata = meta)
@@ -211,7 +203,6 @@ class SmartSync():
 
         """
         ## verify the s3path passed as command line arg
-        ## need to add check whether a file or directory was specified
         self.verify_keys(keys = [self.key], meta = self.metadir)
 
         ## verify local dirs converted to s3keys
