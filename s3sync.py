@@ -1,24 +1,28 @@
 #!/usr/bin/env python3
 ## Sean Landry, sean.d.landry@gmail.com, sean.landry@cellsignal.com
 ## version 05june2017
+## Description: s3syncsli --> sync local directory with s3 bucket.  
+##              Contains the SmartS3Sync() class.
 
 """
 Sync local data with S3 maintaining metadata.  This program will accept 
-directories as arguments.
+only directories as positional arguments.
 
 Metadata notes
 - for directories use "mode":"509", mode 33204 does NOT work
 - for files use "mode":"33204"
-- currently these values are hard coded
+- currently these values are hard coded in the SmartSync.parse_meta() object 
+  method
 
 Usage:
-    s3up <localdir> <s3path> [--metadata METADATA]
+    s3up <localdir> <s3path> [--metadata METADATA --profile PROFILE]
     s3up -h | --help 
 
 Options: 
     <localdir>               local directory file path
     <s3path>                  s3 key, e.g. cst-compbio-research-00-buc/
     --metadata METADATA      metadata in json format [default: {"uid":"6812", "gid":"6812"}]
+    --profile PROFILE        aws profile name [default: default]
     -h --help                show this screen.
 """ 
 
@@ -28,15 +32,16 @@ import os
 import sys
 import json
 
-class SmartSync():
+class SmartS3Sync():
 
-    def __init__(self, local = None, s3path = None, meta = None):
+    def __init__(self, local = None, s3path = None, meta = None, profile = None):
         self.local = local
         self.s3path = s3path
         self.bucket = s3path.split('/', 1)[0]
         self.key = self.parse_prefix(s3path)
         self.localToKeys = self.find_dirs(local)
         self.metadir, self.metafile = self.parse_meta(meta)
+        self.profile = profile
 
 
     def parse_meta(self, meta = None):
@@ -113,7 +118,7 @@ class SmartSync():
 
         """
         return subprocess.Popen(["aws", "s3api", "head-object", "--bucket",
-                        self.bucket, "--key", key],
+                        self.bucket, "--key", key, "--profile", self.profile],
                         stdout = subprocess.PIPE, shell = False)
 
     def meta_check(self, obj_head = None):
@@ -148,7 +153,8 @@ class SmartSync():
         subprocess.run(["aws", "s3api", "copy-object", "--bucket",
                     self.bucket, "--key", key, "--copy-source",
                     self.bucket + "/" + key, "--metadata", metadata,
-                    "--metadata-directive", "REPLACE"])
+                    "--metadata-directive", "REPLACE", "--profile", 
+                    self.profile])
 
     def create_key(self, key = None, metadata = None): 
         """
@@ -160,7 +166,8 @@ class SmartSync():
 
         """
         subprocess.run(["aws", "s3api", "put-object", "--bucket", self.bucket,
-                            "--key", key, "--metadata", metadata])
+                            "--key", key, "--metadata", metadata, "--profile", 
+                            self.profile])
 
     def verify_keys(self, keys = None, meta = None):
         """
@@ -197,7 +204,7 @@ class SmartSync():
 
 
 
-    def smart_sync(self):
+    def sync(self):
         """
         Completes a sync between a local path and s3 bucket path.
 
@@ -210,7 +217,8 @@ class SmartSync():
 
         ## complete sync
         s3url = 's3://' + self.s3path
-        subprocess.run(["aws", "s3", "sync", self.local, s3url, "--metadata", self.metafile])
+        subprocess.run(["aws", "s3", "sync", self.local, s3url, "--metadata", 
+                         self.metafile, "--profile", self.profile])
         
 
 if __name__== "__main__":
@@ -220,6 +228,9 @@ if __name__== "__main__":
 
     options = docopt(__doc__)
 
-    s3_sync = SmartSync(local = options['<localdir>'], s3path = options['<s3path>'], meta = options['--metadata'])
+    s3_sync = SmartS3Sync(local = options['<localdir>'], 
+                        s3path = options['<s3path>'], 
+                        meta = options['--metadata'], 
+                        profile = options['--profile'])
 
-    s3_sync.smart_sync()
+    s3_sync.sync()
