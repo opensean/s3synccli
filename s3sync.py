@@ -31,16 +31,18 @@ import subprocess
 import os
 import sys
 import json
+from json import JSONDecodeError
 
 class SmartS3Sync():
 
-    def __init__(self, local = None, s3path = None, meta = None, profile = None):
+    def __init__(self, local = None, s3path = None, metadata = None, profile = None):
         self.local = local
         self.s3path = s3path
         self.bucket = s3path.split('/', 1)[0]
-        self.key = self.parse_prefix(s3path)
+        self.keys = self.parse_prefix(s3path, self.bucket)
+        self.sync_dir = True
         self.localToKeys = self.find_dirs(local)
-        self.metadir, self.metafile = self.parse_meta(meta)
+        self.metadir, self.metafile = self.parse_meta(metadata)
         self.profile = profile
 
 
@@ -77,7 +79,7 @@ class SmartS3Sync():
         metafilejs = json.dumps(metafile)
         return metadirjs, metafilejs
 
-    def parse_prefix(self, path = None):
+    def parse_prefix(self, path = None, bucket = None):
         """
         Parse an s3 prefix key path.
 
@@ -88,10 +90,18 @@ class SmartS3Sync():
             path (str): path withouth bucket name.
 
         """
-        if len(path.split('/', 1)) > 1:
-            return path.split('/', 1)[1]
-        else:
-            return path
+        parts = path.split('/')
+        prefixes = []
+    
+        temp = path[len(bucket) + 1:]
+        prefixes.append(temp)
+        while '/' in temp:
+            temp = temp.rsplit('/', 1)[0]
+            if temp:
+                prefixes.append(temp + '/')
+
+
+        return prefixes  
 
     def find_dirs(self, local = None):
         """
@@ -111,12 +121,18 @@ class SmartS3Sync():
         d = subprocess.Popen(["find", local, "-type", "d"],
                          stdout = subprocess.PIPE, shell = False)
 
+        
         dsort = subprocess.Popen(["sort", "-n"], stdin = d.stdout, shell = False,
                              stdout = subprocess.PIPE)
-
         ## sorted directories as a list
+    
         dLst = dsort.communicate()[0].decode().strip().split('\n')
-        return [self.key + k[len(self.local) + 1:] + '/' for k in dLst]
+        
+        if len(dLst) == 1 and not dLst[0]:
+            self.sync_dir = False
+            return []
+        else:
+            return [self.s3path.split('/', 1)[1] + k[len(self.local) + 1:] + '/' for k in dLst[1:]]
         
     def key_exists(self, key = None):
         """
@@ -129,28 +145,9 @@ class SmartS3Sync():
             stdout subprocess call to aws s3api head-object
 
         """
-        return subprocess.Popen(["aws", "s3api", "head-object", "--bucket",
+        return subprocess.run(["aws", "s3api", "head-object", "--bucket",
                         self.bucket, "--key", key, "--profile", self.profile],
-                        stdout = subprocess.PIPE, shell = False)
-
-    def meta_check(self, obj_head = None):
-        """
-        Parse the metadata for an s3 object.
-
-        Args:
-            obj_head (stdout): stdout of subprocess call to aws s3api 
-                               head-object.
-
-        Returns:
-            boolean: True metadata exists, False no metadata present.
-
-        """
-        meta = json.loads(obj_head.communicate()[0].decode())['Metadata']
-
-        if len(meta) == 0:
-            return False
-        else:
-            return True
+                        check = True, stdout = subprocess.PIPE, stderr = subprocess.PIPE)
 
     def meta_update(self, key = None, metadata = None):
         """
@@ -177,10 +174,11 @@ class SmartS3Sync():
             metadata (json str):  metadata to attach to the object.
 
         """
-        subprocess.run(["aws", "s3api", "put-object", "--bucket", self.bucket,
+        
+        return subprocess.run(["aws", "s3api", "put-object", "--bucket", self.bucket,
                             "--key", key, "--metadata", metadata, "--profile", 
-                            self.profile])
-
+                            self.profile], stdout = subprocess.PIPE, check = True)
+        
     def verify_keys(self, keys = None, meta = None):
         """
         Check if the keys in list exist.  If the do not exist create them.
@@ -192,29 +190,31 @@ class SmartS3Sync():
         for k in keys:
             try:
                 check = self.key_exists(key = k)
-
+                
+                 
                 ## if key does exist check for metadata
-                metaresult = self.meta_check(obj_head = check)
-
-                if not metaresult:
+                metaresult = json.loads(check.stdout.decode())['Metadata']
+                if len(metaresult) == 0:
                     ## if no metadata then add some now
                     sys.stderr.write('no metadata found for ' + k + ' updating...\n')
                     update = self.meta_update(key = k, metadata = meta)
-
-            except:
-                ## key does not exist so lets create it
                 
-                sys.stderr.write("creating key '" + k + "'\n")
+                
+                if metaresult != json.loads(meta):
+                    sys.stderr.write('bad metadata found for ' + k + ' updating...\n')
+                    update = self.meta_update(key = k, metadata = meta)
 
-                self.create_key(key = k, metadata = meta)
+            except subprocess.CalledProcessError:
+                ## key does not exist so lets create it
+                try: 
+                    sys.stderr.write("creating key '" + k + "'\n")
 
-                ## debug
-                #check = subprocess.Popen(["aws", "s3api", "head-object", "--bucket", 
-                #                          self.bucket, "--key", k], 
-                #                          stdout = subprocess.PIPE, shell = False)
-
-                #print(json.loads(check.communicate()[0].decode())['Metadata'])
-
+                    make_key = self.create_key(key = k, metadata = meta)
+                     
+                except subprocess.CalledProcessError:
+                    ## Access Denied, s3 permission error
+                    sys.stderr.write("exiting...\n")
+                    sys.exit()
 
 
     def sync(self):
@@ -223,16 +223,18 @@ class SmartS3Sync():
 
         """
         ## verify the s3path passed as command line arg
-        self.verify_keys(keys = [self.key], meta = self.metadir)
-
-        ## verify local dirs converted to s3keys
-        self.verify_keys(keys = self.localToKeys[1:], meta = self.metadir)
-
-        ## complete sync
+        self.verify_keys(keys = self.keys, meta = self.metadir)
         s3url = 's3://' + self.s3path
-        subprocess.run(["aws", "s3", "sync", self.local, s3url, "--metadata", 
+        if self.sync_dir:
+            ## verify local dirs converted to s3keys
+            self.verify_keys(keys = self.localToKeys, meta = self.metadir)
+
+            ## complete sync
+            subprocess.run(["aws", "s3", "sync", self.local, s3url, "--metadata", 
                          self.metafile, "--profile", self.profile])
-        
+        else:
+            subprocess.run(["aws", "s3", "cp", self.local, s3url, "--metadata",
+                         self.metafile, "--profile", self.profile])
 
 if __name__== "__main__":
     """
@@ -243,7 +245,7 @@ if __name__== "__main__":
 
     s3_sync = SmartS3Sync(local = options['<localdir>'], 
                         s3path = options['<s3path>'], 
-                        meta = options['--metadata'], 
+                        metadata = options['--metadata'], 
                         profile = options['--profile'])
 
     s3_sync.sync()
