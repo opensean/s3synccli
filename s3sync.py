@@ -33,18 +33,65 @@ import sys
 import json
 import boto3
 from botocore.exceptions import ClientError
+from collections import OrderedDict
+
+class DirWalk():
+
+    def __init__(self, local = None, s3path = None):
+        self.local = local
+        self.s3path = s3path
+        self.root = []
+        self.file = []
+        self.isdir = True
+        self.walk_dir(local)
+        self.s3FileKeys = self.toS3Keys(self.file, isdir = False)
+        self.s3RootKeys = self.toS3Keys(self.root)
+
+    def walk_dir(self, local):
+        d = sorted(os.walk(local))
+        if len(d) == 0 and os.path.isfile(local):
+            self.isdir = False
+        for a,b,c in d:
+            self.root.append({a:self.dzip_meta(a)})
+            if c:
+                for f in c:
+                    self.file.append({os.path.join(a, f): self.dzip_meta(os.path.join(a, f))})
+        
+    def dzip_meta(self, key):
+        stat = os.stat(key)
+        return {a:b for a,b in zip(["uid", "gid", "mode", "mtime", "size"],
+                                   [str(stat.st_uid), str(stat.st_gid),
+                                    str(stat.st_mode), str(stat.st_mtime),
+                                    str(stat.st_size)])}  
+
+    def toS3Keys(self, keys, isdir = True):
+        try:
+            s3 = []
+            for item in keys:
+                
+                for k,v in item.items():
+                    if isdir:
+                        s3.append([{os.path.join(self.s3path.split('/', 1)[1], k[len(self.local) + 1:] + '/'):v}])
+                    else:
+                        s3.append([{os.path.join(self.s3path.split('/', 1)[1], k[len(self.local) + 1:]):v}])
+            return s3
+        except AttributeError as e:
+            sys.stderr.write(str(e) + '\n')
+
+        
 
 class SmartS3Sync():
 
     def __init__(self, local = None, s3path = None, metadata = None, profile = 'default', meta_dir_mode = "509", meta_file_mode = "33204"):
         self.local = local
-        self.local_ostat = os.stat(local)
+        self.local_osstat = os.stat(local)
         self.s3path = s3path
         self.bucket = s3path.split('/', 1)[0]
+        self.metadir, self.metafile = self.parse_meta(metadata, dirmode = meta_dir_mode, filemode = meta_file_mode)
         self.keys = self.parse_prefix(s3path, self.bucket)
         self.sync_dir = True
+        self.walk_local = DirWalk(local = local, s3path = s3path)
         self.localToKeys = self.find_dirs(local)
-        self.metadir, self.metafile = self.parse_meta(metadata, dirmode = meta_dir_mode, filemode = meta_file_mode)
         self.profile = profile
         self.session = boto3.Session(profile_name = self.profile)
         self.s3cl = boto3.client('s3')
@@ -96,13 +143,12 @@ class SmartS3Sync():
         """
         parts = path.split('/')
         prefixes = []
-    
+        
         temp = path[len(bucket) + 1:]
-        prefixes.append(temp)
         while '/' in temp:
             temp = temp.rsplit('/', 1)[0]
             if temp:
-                prefixes.append(temp + '/')
+                prefixes.append({temp + '/': json.loads(self.metadir)})
 
 
         return prefixes  
@@ -123,7 +169,9 @@ class SmartS3Sync():
         d = sorted(os.walk(local))
         if len(d) == 0 and os.path.isfile(local):
             self.sync_dir = False
-        return [self.s3path.split('/', 1)[1] + p[0][len(local) + 1:] + '/' for p in d[1:]]
+        d = [(p[0], {a:b for a,b in zip(["uid", "gid", "mode"], [str(os.stat(p[0]).st_uid), str(os.stat(p[0]).st_gid), str(os.stat(p[0]).st_mode)])} ) for p in d[1:]] 
+    
+        return [{"key":self.s3path.split('/', 1)[1] + p[0][len(local) + 1:] + '/', "meta":p[1]} for p in d]
 
 
     def key_exists(self, key = None):
@@ -157,13 +205,37 @@ class SmartS3Sync():
         Create an s3 object, also known as put-object.
 
         Args:
-            key (str):  s3 key.
+            key (str):}}  s3 key.
             metadata (dict):  metadata to attach to the object.
 
         """
         return self.s3cl.put_object(Bucket = self.bucket, Key = key, Metadata = metadata) 
+     
+    def s3_content_check(self, Prefix):
+        # Create a reusable Paginator
+        paginator = self.s3cl.get_paginator('list_objects_v2')
+
+        # Create a PageIterator from the Paginator
+        page_iterator = paginator.paginate(Bucket=self.bucket, Prefix=Prefix)
+
+        for page in page_iterator:
+            for key in page['Contents']:
+                print(key)   
+
+
+    def s3ls(self, Prefix):
+        # Create a reusable Paginator
+        paginator = self.s3cl.get_paginator('list_objects_v2')
         
-    def verify_keys(self, keys = None, meta = None):
+        # Create a PageIterator from the Paginator
+        page_iterator = paginator.paginate(Bucket=self.bucket, Prefix=Prefix)
+        
+        for page in page_iterator:
+            
+            for key in page['Contents']:
+                print(key)
+
+    def verify_keys(self, keys = None):
         """
         Check if the keys in list exist.  If the do not exist create them.
 
@@ -171,41 +243,42 @@ class SmartS3Sync():
             keys (lst): list of keys.
             meta (json str): metadata to attach to the keys
         """
-        for k in keys:
-            try:
-                check = self.key_exists(key = k)
-                
-                 
-                ## if key does exist check for metadata
-                metaresult = check['Metadata']
-                if len(metaresult) == 0:
-                    try:
-                        ## if no metadata then add some now
-                        sys.stderr.write('no metadata found for ' + k + ' updating...\n')
-                        update = self.meta_update(key = k, metadata = json.loads(meta))
-                    except ClientError as e:
-                        ## allow continue to allow existing directory structure such as '/home'
-                        sys.stderr.write(str(e) + "\n")
-                         
-                if metaresult != json.loads(meta):
-                    try:
-                        sys.stderr.write('bad metadata found for ' + k + ' updating...\n')
-                        update = self.meta_update(key = k, metadata = json.loads(meta))
-                    except ClientError as e:
-                        ## allow continue to allow existing directory structure such as '/home'
-                        sys.stderr.write(str(e) + "\n")
-                        
-            except ClientError:
-                ## key does not exist so lets create it
-                try: 
-                    sys.stderr.write("creating key '" + k + "'\n")
-
-                    make_key = self.create_key(key = k, metadata = json.loads(meta))
+        ## structure of each k --> {'home/somefoler/', {metadata}}
+        for item in keys:
+            for k,v in item.items():
+                try:
+                    check = self.key_exists(key = k) 
                      
+                    ## if key does exist check for metadata
+                    metaresult = check['Metadata']
+                    if len(metaresult) == 0:
+                        try:
+                            ## if no metadata then add some now
+                            sys.stderr.write('no metadata found for ' + k + ' updating...\n')
+                            update = self.meta_update(key = k, metadata = v)
+                        except ClientError as e:
+                            ## allow continue to allow existing directory structure such as '/home'
+                            sys.stderr.write(str(e) + "\n")
+                             
+                    if metaresult != v:
+                        try:
+                            sys.stderr.write('bad metadata found for ' + k + ' updating...\n')
+                            update = self.meta_update(key = k, metadata = v)
+                        except ClientError as e:
+                            ## allow continue to allow existing directory structure such as '/home'
+                            sys.stderr.write(str(e) + "\n")
+                            
                 except ClientError:
-                    ## Access Denied, s3 permission error
-                    sys.stderr.write("exiting...\n")
-                    sys.exit()
+                    ## key does not exist so lets create it
+                    try: 
+                        sys.stderr.write("creating key '" + k + "'\n")
+
+                        make_key = self.create_key(key = k, metadata = v)
+                         
+                    except ClientError:
+                        ## Access Denied, s3 permission error
+                        sys.stderr.write("exiting...\n")
+                        sys.exit()
 
 
     def sync(self):
@@ -214,12 +287,12 @@ class SmartS3Sync():
 
         """
         ## verify the s3path passed as command line arg
-        self.verify_keys(keys = self.keys, meta = self.metadir)
+        self.verify_keys(keys = self.keys)
         s3url = 's3://' + self.s3path
         
         if self.sync_dir:
             ## verify local dirs converted to s3keys
-            self.verify_keys(keys = self.localToKeys, meta = self.metadir)
+            self.verify_keys(keys = self.walk_local.s3RootKeys)
 
             ## complete sync
             subprocess.run(["aws", "s3", "sync", self.local, s3url, "--metadata", 
