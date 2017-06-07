@@ -38,6 +38,7 @@ class SmartS3Sync():
 
     def __init__(self, local = None, s3path = None, metadata = None, profile = 'default', meta_dir_mode = "509", meta_file_mode = "33204"):
         self.local = local
+        self.local_ostat = os.stat(local)
         self.s3path = s3path
         self.bucket = s3path.split('/', 1)[0]
         self.keys = self.parse_prefix(s3path, self.bucket)
@@ -230,7 +231,7 @@ class SmartS3Sync():
                 key = self.s3path.split('/', 1)[1] +  self.local.rsplit('/', 1)[1]
                 try:
                     self.s3cl.upload_fileobj(f, self.bucket, key, ExtraArgs = meta)
-                    sys.stderr.write("upload: " + self.local + " as " + key + "\n")
+                    sys.stderr.write("upload: " + self.local + " to " + key + "\n")
                 except ClientError as e:
                     sys.stderr.write(str(e) + "\n")
 
