@@ -11,19 +11,19 @@ only directories as positional arguments.
 Metadata notes
 - for directories use "mode":"509", mode 33204 does NOT work
 - for files use "mode":"33204"
-- currently these values are hard coded in the SmartSync.parse_meta() object 
-  method
 
 Usage:
-    s3sync <localdir> <s3path> [--metadata METADATA --profile PROFILE]
+    s3sync <localdir> <s3path> [--metadata METADATA --meta_dir_mode METADIR --meta_file_mode METAFILE --profile PROFILE]
     s3sync -h | --help 
 
 Options: 
-    <localdir>               local directory file path
-    <s3path>                  s3 key, e.g. cst-compbio-research-00-buc/
-    --metadata METADATA      metadata in json format e.g. '{"uid":"6812", "gid":"6812"}'
-    --profile PROFILE        aws profile name [default: default]
-    -h --help                show this screen.
+    <localdir>                 local directory file path
+    <s3path>                   s3 key, e.g. cst-compbio-research-00-buc/
+    --metadata METADATA        metadata in json format e.g. '{"uid":"6812", "gid":"6812"}'
+    --meta_dir_mode METADIR    mode to use for directories in metadata [default: 509]
+    --meta_file_mode METAFILE  mode to use for files in metadata [default: 33204]
+    --profile PROFILE          aws profile name [default: default]
+    -h --help                  show this screen.
 """ 
 
 from docopt import docopt
@@ -31,22 +31,25 @@ import subprocess
 import os
 import sys
 import json
-from json import JSONDecodeError
+import boto3
+from botocore.exceptions import ClientError
 
 class SmartS3Sync():
 
-    def __init__(self, local = None, s3path = None, metadata = None, profile = None):
+    def __init__(self, local = None, s3path = None, metadata = None, profile = 'default', meta_dir_mode = "509", meta_file_mode = "33204"):
         self.local = local
         self.s3path = s3path
         self.bucket = s3path.split('/', 1)[0]
         self.keys = self.parse_prefix(s3path, self.bucket)
         self.sync_dir = True
         self.localToKeys = self.find_dirs(local)
-        self.metadir, self.metafile = self.parse_meta(metadata)
+        self.metadir, self.metafile = self.parse_meta(metadata, dirmode = meta_dir_mode, filemode = meta_file_mode)
         self.profile = profile
+        self.session = boto3.Session(profile_name = self.profile)
+        self.s3cl = boto3.client('s3')
+        self.s3rc = boto3.resource('s3')
 
-
-    def parse_meta(self, meta = None):
+    def parse_meta(self, meta = None, dirmode = None, filemode = None):
         """
         Parses passed json argument and adds hardcoded mode for files
         and directories.
@@ -66,8 +69,8 @@ class SmartS3Sync():
             metadir = {}
             metafile = {}
         if 'mode' not in metadir:
-            metadir["mode"] = "509"
-            metafile["mode"] = "33204"
+            metadir["mode"] = dirmode
+            metafile["mode"] = filemode
         if 'uid' not in metadir:
             metadir["uid"] = str(os.geteuid())
             metafile["uid"] = str(os.geteuid())
@@ -105,7 +108,7 @@ class SmartS3Sync():
 
     def find_dirs(self, local = None):
         """
-        Execute find and sort subprocceses to identify and sort all local 
+        Execute find and sort too identify and sort all local 
         child directories of the local argument.  All directories identified
         are converted to s3 keys.
 
@@ -116,24 +119,12 @@ class SmartS3Sync():
             (list): s3 keys.
 
         """
-        ## find local directories and sort
-        
-        d = subprocess.Popen(["find", local, "-type", "d"],
-                         stdout = subprocess.PIPE, shell = False)
-
-        
-        dsort = subprocess.Popen(["sort", "-n"], stdin = d.stdout, shell = False,
-                             stdout = subprocess.PIPE)
-        ## sorted directories as a list
-    
-        dLst = dsort.communicate()[0].decode().strip().split('\n')
-        
-        if len(dLst) == 1 and not dLst[0]:
+        d = sorted(os.walk(local))
+        if len(d) == 0 and os.path.isfile(local):
             self.sync_dir = False
-            return []
-        else:
-            return [self.s3path.split('/', 1)[1] + k[len(self.local) + 1:] + '/' for k in dLst[1:]]
-        
+        return [self.s3path.split('/', 1)[1] + p[0][len(local) + 1:] + '/' for p in d[1:]]
+
+
     def key_exists(self, key = None):
         """
         Check if an s3 key exists.
@@ -142,42 +133,34 @@ class SmartS3Sync():
             key (str): s3 key
 
         Returns:
-            stdout subprocess call to aws s3api head-object
+            dict
 
         """
-        return subprocess.run(["aws", "s3api", "head-object", "--bucket",
-                        self.bucket, "--key", key, "--profile", self.profile],
-                        check = True, stdout = subprocess.PIPE, stderr = subprocess.PIPE)
-
+        return self.s3cl.head_object(Bucket = self.bucket, Key = key)
+        
     def meta_update(self, key = None, metadata = None):
         """
         Update the metadata for an s3 object.
 
         Args:
             key (str):  s3 key.
-            metadata (json str):  metadata to attach to the object.
+            metadata (dict):  metadata to attach to the object.
 
 
         """
-        subprocess.run(["aws", "s3api", "copy-object", "--bucket",
-                    self.bucket, "--key", key, "--copy-source",
-                    self.bucket + "/" + key, "--metadata", metadata,
-                    "--metadata-directive", "REPLACE", "--profile", 
-                    self.profile])
-
+        my_bucket = self.s3rc.Bucket(self.bucket)
+        my_bucket.Object(key).copy_from(CopySource = my_bucket.name +'/' + key, Metadata = metadata, MetadataDirective='REPLACE')
+        
     def create_key(self, key = None, metadata = None): 
         """
         Create an s3 object, also known as put-object.
 
         Args:
             key (str):  s3 key.
-            metadata (json str):  metadata to attach to the object.
+            metadata (dict):  metadata to attach to the object.
 
         """
-        
-        return subprocess.run(["aws", "s3api", "put-object", "--bucket", self.bucket,
-                            "--key", key, "--metadata", metadata, "--profile", 
-                            self.profile], stdout = subprocess.PIPE, check = True)
+        return self.s3cl.put_object(Bucket = self.bucket, Key = key, Metadata = metadata) 
         
     def verify_keys(self, keys = None, meta = None):
         """
@@ -193,25 +176,32 @@ class SmartS3Sync():
                 
                  
                 ## if key does exist check for metadata
-                metaresult = json.loads(check.stdout.decode())['Metadata']
+                metaresult = check['Metadata']
                 if len(metaresult) == 0:
-                    ## if no metadata then add some now
-                    sys.stderr.write('no metadata found for ' + k + ' updating...\n')
-                    update = self.meta_update(key = k, metadata = meta)
-                
-                
+                    try:
+                        ## if no metadata then add some now
+                        sys.stderr.write('no metadata found for ' + k + ' updating...\n')
+                        update = self.meta_update(key = k, metadata = json.loads(meta))
+                    except ClientError as e:
+                        ## allow continue to allow existing directory structure such as '/home'
+                        sys.stderr.write(str(e) + "\n")
+                         
                 if metaresult != json.loads(meta):
-                    sys.stderr.write('bad metadata found for ' + k + ' updating...\n')
-                    update = self.meta_update(key = k, metadata = meta)
-
-            except subprocess.CalledProcessError:
+                    try:
+                        sys.stderr.write('bad metadata found for ' + k + ' updating...\n')
+                        update = self.meta_update(key = k, metadata = json.loads(meta))
+                    except ClientError as e:
+                        ## allow continue to allow existing directory structure such as '/home'
+                        sys.stderr.write(str(e) + "\n")
+                        
+            except ClientError:
                 ## key does not exist so lets create it
                 try: 
                     sys.stderr.write("creating key '" + k + "'\n")
 
-                    make_key = self.create_key(key = k, metadata = meta)
+                    make_key = self.create_key(key = k, metadata = json.loads(meta))
                      
-                except subprocess.CalledProcessError:
+                except ClientError:
                     ## Access Denied, s3 permission error
                     sys.stderr.write("exiting...\n")
                     sys.exit()
@@ -225,6 +215,7 @@ class SmartS3Sync():
         ## verify the s3path passed as command line arg
         self.verify_keys(keys = self.keys, meta = self.metadir)
         s3url = 's3://' + self.s3path
+        
         if self.sync_dir:
             ## verify local dirs converted to s3keys
             self.verify_keys(keys = self.localToKeys, meta = self.metadir)
@@ -233,8 +224,15 @@ class SmartS3Sync():
             subprocess.run(["aws", "s3", "sync", self.local, s3url, "--metadata", 
                          self.metafile, "--profile", self.profile])
         else:
-            subprocess.run(["aws", "s3", "cp", self.local, s3url, "--metadata",
-                         self.metafile, "--profile", self.profile])
+            with open(self.local, 'rb') as f:
+                meta = {}
+                meta['Metadata'] = json.loads(self.metafile)
+                key = self.s3path.split('/', 1)[1] +  self.local.rsplit('/', 1)[1]
+                try:
+                    self.s3cl.upload_fileobj(f, self.bucket, key, ExtraArgs = meta)
+                    sys.stderr.write("upload: " + self.local + " as " + key + "\n")
+                except ClientError as e:
+                    sys.stderr.write(str(e) + "\n")
 
 if __name__== "__main__":
     """
@@ -246,6 +244,8 @@ if __name__== "__main__":
     s3_sync = SmartS3Sync(local = options['<localdir>'], 
                         s3path = options['<s3path>'], 
                         metadata = options['--metadata'], 
-                        profile = options['--profile'])
+                        profile = options['--profile'],
+                        meta_dir_mode = options['--meta_dir_mode'],
+                        meta_file_mode = options['--meta_file_mode'])
 
     s3_sync.sync()
