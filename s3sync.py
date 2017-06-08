@@ -34,15 +34,57 @@ import json
 import boto3
 from botocore.exceptions import ClientError
 from collections import OrderedDict
+from datetime import datetime
+import hashlib
+import binascii
+from hexdump import hexdump
 
 class StatUtility():
     
+## https://stackoverflow.com/questions/3431825/generating-an-md5-checksum-of-a-file
+## https://stackoverflow.com/questions/6591047/etag-definition-changed-in-amazon-s3/28877788#28877788
+    def md5(fname, part_size = 8 * 1024 * 1024):
+        print("part_size", part_size)
+        print("file size", os.path.getsize(fname))
+        if os.path.isfile(fname): 
+            #hash_md5 = hashlib.md5()
+            blockcount = 0
+            md5Lst = []
+            with open(fname, "rb") as f:
+                for chunk in iter(lambda: f.read(part_size), b""):
+                    hash_md5 = hashlib.md5()
+                    hash_md5.update(chunk)
+                    print
+                    print(hash_md5.hexdigest())
+                    md5Lst.append(hash_md5.hexdigest())
+                    blockcount += 1
+
+            #c = ''.join(md5Lst[:len(md5Lst)-1])
+        
+            hash_md5 = hashlib.md5()
+            c = ''.join(md5Lst)
+            print(c.encode())
+            hash_md5.update(c.encode())
+            print(hash_md5.hexdigest())
+            hash_md5 = hashlib.md5()
+            print(hexlify(c.encode()))
+            hash_md5.update(hexlify(c.encode()))
+            print(hash_md5.hexdigest())
+               # if blockcount == 1:
+               #     return hash_md5.hexdigest()
+               # else:
+               #     return hash_md5.hexdigest() + '-' + str(blockcount)
+        else:
+            return ''
+
     def dzip_meta(self, key):
         stat = os.stat(key)
-        return {a:b for a,b in zip(["uid", "gid", "mode", "mtime", "size"],
+        return {a:b for a,b in zip(["uid", "gid", "mode", "mtime", "size", "ETag"],
                                    [str(stat.st_uid), str(stat.st_gid),
                                     str(stat.st_mode), str(stat.st_mtime),
-                                    str(stat.st_size)])}
+                                    str(stat.st_size), str(self.md5(key))])}
+
+
 
 class DirectoryWalk(StatUtility):
 
@@ -71,12 +113,20 @@ class DirectoryWalk(StatUtility):
     
     def toS3Keys(self, keys, s3path, isdir = True):
         try:
-            s3 = []
+            s3 = None
             for k,v in keys.items():
                 if isdir:
-                    s3.append([{os.path.join(s3path.split('/', 1)[1], k[len(self.local) + 1:] + '/'):v}])
+                    if s3 == None:
+                        ## omit first 
+                        if os.path.join(s3path.split('/', 1)[1], k[len(self.local) + 1:] + '/') != '/':
+                            s3 = OrderedDict({os.path.join(s3path.split('/', 1)[1], k[len(self.local) + 1:] + '/'):v})
+                    else:
+                        s3.update({os.path.join(s3path.split('/', 1)[1], k[len(self.local) + 1:] + '/'):v})
                 else:
-                    s3.append([{os.path.join(s3path.split('/', 1)[1], k[len(self.local) + 1:]):v}])
+                    if s3 == None:
+                        s3 = OrderedDict({os.path.join(s3path.split('/', 1)[1], k[len(self.local) + 1:]):v})
+                    else:
+                        s3.update({os.path.join(s3path.split('/', 1)[1], k[len(self.local) + 1:]):v})
             return s3
         except AttributeError as e:
             sys.stderr.write(str(e) + '\n')
@@ -91,6 +141,7 @@ class SmartS3Sync():
         self.bucket = s3path.split('/', 1)[0]
         self.metadir, self.metafile = self.parse_meta(metadata, dirmode = meta_dir_mode, filemode = meta_file_mode)
         self.keys = self.parse_prefix(s3path, self.bucket)
+        self.walk = DirectoryWalk(local)
         self.profile = profile
         self.session = boto3.Session(profile_name = self.profile)
         self.s3cl = boto3.client('s3')
@@ -271,7 +322,7 @@ class SmartS3Sync():
         self.verify_keys(keys = self.keys)
         s3url = 's3://' + self.s3path
         
-        if os.isfile(self.local):
+        if os.path.isfile(self.local):
             with open(self.local, 'rb') as f:
                 meta = StatUtility.dzip_meta(self, key = self.local)
                 key = self.s3path.split('/', 1)[1] +  self.local.rsplit('/', 1)[1]
@@ -281,13 +332,45 @@ class SmartS3Sync():
                 except ClientError as e:
                     sys.stderr.write(str(e) + "\n")
         else:
-            ## verify local dirs converted to s3keys
-            walk = DirectoryWalk(self.local)
-            self.verify_keys(keys = walk.toS3Keys(walk.root, self.s3path))
+            ## local dirs converted to s3keys
+            s3localdirkeys = self.walk.toS3Keys(self.walk.root, self.s3path)
+            ## local files converted to s3keys
+            s3localfilekeys = self.walk.toS3Keys(self.walk.file, self.s3path, isdir = False)
+
+            # Create a reusable Paginator
+            paginator = self.s3cl.get_paginator('list_objects_v2')
+
+            # Create a PageIterator from the Paginator
+            page_iterator = paginator.paginate(Bucket=self.bucket, Prefix=self.s3path[len(self.bucket) + 1:])
+
+            matches = None
+
+            ## look for kyes in object first, iterate until all pages are exhausted or all keys have been found
+            for page in page_iterator:
+                for k,v in s3localfilekeys.items():
+                    if matches:
+                        matches.update({k:item for item in page['Contents'] if item['Key'] == k})
+                    else:
+                        matches = OrderedDict({k:item for item in page['Contents'] if item['Key'] == k})
+                if len(matches) == len(s3localfilekeys):
+                    ## no need to continue page iteration if we have found all keys
+                    break
+
+            #print(matches)
+                
+            needs_sync = None
+            for k,v in s3localfilekeys.items():
+                #a = [datetime.utcfromtimestamp(float(v['mtime'])).strftime('%Y-%m-%d %H:%M:%S'), v['size']]
+                #b = [matches[k]['LastModified'].strftime('%Y-%m-%d %H:%M:%S'), matches[k]['Size']]
+                a = v['ETag']
+                b = matches[k]['ETag']
+                
+                print(a, b)
+            #self.verify_keys(keys = s3localkeys)
 
             ## complete sync
-            subprocess.run(["aws", "s3", "sync", self.local, s3url, "--metadata",
-                         self.metafile, "--profile", self.profile])
+            #subprocess.run(["aws", "s3", "sync", self.local, s3url, "--metadata",
+            #             self.metafile, "--profile", self.profile])
 
 if __name__== "__main__":
     """
