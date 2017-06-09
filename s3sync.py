@@ -36,40 +36,55 @@ from botocore.exceptions import ClientError
 from collections import OrderedDict
 from datetime import datetime
 import hashlib
-import binascii
-from hexdump import hexdump
+from binascii import unhexlify
+from binascii import hexlify
+import hexdump
 
-class StatUtility():
+class S3SyncUtility():
     
+    def __init__(self):
+        self.name = "S3SyncUtility"
+
 ## https://stackoverflow.com/questions/3431825/generating-an-md5-checksum-of-a-file
 ## https://stackoverflow.com/questions/6591047/etag-definition-changed-in-amazon-s3/28877788#28877788
-    def md5(fname, part_size = 8 * 1024 * 1024):
+    def md5(self, fname, part_size = 8 * 1024 * 1024):
         print("part_size", part_size)
         print("file size", os.path.getsize(fname))
         if os.path.isfile(fname): 
-            #hash_md5 = hashlib.md5()
+            hash_md5 = hashlib.md5()
             blockcount = 0
             md5Lst = []
             with open(fname, "rb") as f:
                 for chunk in iter(lambda: f.read(part_size), b""):
-                    hash_md5 = hashlib.md5()
                     hash_md5.update(chunk)
-                    print
-                    print(hash_md5.hexdigest())
+                    #print(hash_md5.hexdigest())
                     md5Lst.append(hash_md5.hexdigest())
                     blockcount += 1
+            
+            if blockcount == 1:
+                return hash_md5.hexdigest()
 
-            #c = ''.join(md5Lst[:len(md5Lst)-1])
-        
-            hash_md5 = hashlib.md5()
-            c = ''.join(md5Lst)
-            print(c.encode())
-            hash_md5.update(c.encode())
-            print(hash_md5.hexdigest())
-            hash_md5 = hashlib.md5()
-            print(hexlify(c.encode()))
-            hash_md5.update(hexlify(c.encode()))
-            print(hash_md5.hexdigest())
+            else:
+                with open('out.txt', 'w') as o:
+                    for item in md5Lst:
+                        o.write(item + '\n')
+
+                #print(unhexlify(hash_md5.hexdigest()))
+                #with open('hexlify', 'w') as o:
+                #    o.write(unhexlify(hash_md5.hexdigest()))
+                hash_md5 = hashlib.md5()
+                c = ''.join(md5Lst)
+                #print(c)
+                c = unhexlify(c)
+                return c
+                #print(c)
+                #hash_md5.update(c)
+                #print(hash_md5.hexdigest() + '-' + str(blockcount))
+                
+                #hash_md5 = hashlib.md5()
+                #print(hexlify(c.encode()))
+                #hash_md5.update(hexlify(c.encode()))
+                #print(hash_md5.hexdigest())
                # if blockcount == 1:
                #     return hash_md5.hexdigest()
                # else:
@@ -86,7 +101,7 @@ class StatUtility():
 
 
 
-class DirectoryWalk(StatUtility):
+class DirectoryWalk(S3SyncUtility):
 
     def __init__(self, local = None):
         self.local = local
