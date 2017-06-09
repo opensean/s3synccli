@@ -38,7 +38,7 @@ from datetime import datetime
 import hashlib
 from binascii import unhexlify
 from binascii import hexlify
-import hexdump
+
 
 class S3SyncUtility():
     
@@ -56,6 +56,7 @@ class S3SyncUtility():
             md5Lst = []
             with open(fname, "rb") as f:
                 for chunk in iter(lambda: f.read(part_size), b""):
+                    hash_md5 = hashlib.md5()
                     hash_md5.update(chunk)
                     #print(hash_md5.hexdigest())
                     md5Lst.append(hash_md5.hexdigest())
@@ -65,30 +66,11 @@ class S3SyncUtility():
                 return hash_md5.hexdigest()
 
             else:
-                with open('out.txt', 'w') as o:
-                    for item in md5Lst:
-                        o.write(item + '\n')
-
-                #print(unhexlify(hash_md5.hexdigest()))
-                #with open('hexlify', 'w') as o:
-                #    o.write(unhexlify(hash_md5.hexdigest()))
-                hash_md5 = hashlib.md5()
                 c = ''.join(md5Lst)
-                #print(c)
                 c = unhexlify(c)
-                return c
-                #print(c)
-                #hash_md5.update(c)
-                #print(hash_md5.hexdigest() + '-' + str(blockcount))
-                
-                #hash_md5 = hashlib.md5()
-                #print(hexlify(c.encode()))
-                #hash_md5.update(hexlify(c.encode()))
-                #print(hash_md5.hexdigest())
-               # if blockcount == 1:
-               #     return hash_md5.hexdigest()
-               # else:
-               #     return hash_md5.hexdigest() + '-' + str(blockcount)
+                hash_md5 = hashlib.md5()
+                hash_md5.update(c)
+                return hash_md5.hexdigest() + '-' + str(blockcount)
         else:
             return ''
 
