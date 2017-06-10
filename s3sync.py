@@ -1,15 +1,20 @@
 #!/usr/bin/env python3
-## Sean Landry, sean.d.landry@gmail.com, sean.landry@cellsignal.com
-## Description: s3syncsli --> sync local directory with s3 bucket.  
-##              Contains the SmartS3Sync() class.
+## Sean Landry, sean.d.landry@gmail.com
+## Description: s3synccli --> sync local directory and or file with an s3 bucket.  
+##              Contains the S3SyncUtility, DirectoryWalk, ProgressPercentage,
+##              and SmartS3Sync() classes.
 
 """
-Sync local data with S3 maintaining metadata.  This program will accept 
-only directories as positional arguments.
+Sync local data with S3 maintaining metadata.  Maintaining metadata is crucial
+for working with S3 as a mounted file system via s3fs. 
+
 
 Metadata notes
-- for directories use "mode":"509", mode 33204 does NOT work
-- for files use "mode":"33204"
+--------------
+when in doubt:
+
+    - for directories use "mode":"509"
+    - for files use "mode":"33204"
 
 Usage:
     s3sync <localdir> <s3path> [--metadata METADATA --meta_dir_mode METADIR --meta_file_mode METAFILE --profile PROFILE]
@@ -19,8 +24,8 @@ Options:
     <localdir>                 local directory file path
     <s3path>                   s3 key, e.g. cst-compbio-research-00-buc/
     --metadata METADATA        metadata in json format e.g. '{"uid":"6812", "gid":"6812"}'
-    --meta_dir_mode METADIR    mode to use for directories in metadata [default: 509]
-    --meta_file_mode METAFILE  mode to use for files in metadata [default: 33204]
+    --meta_dir_mode METADIR    mode to use for directories in metadata if none is found locally [default: 509]
+    --meta_file_mode METAFILE  mode to use for files in metadata if none if found locally [default: 33204]
     --profile PROFILE          aws profile name [default: default]
     -h --help                  show this screen.
 """ 
@@ -47,11 +52,24 @@ class S3SyncUtility():
     def __init__(self):
         self.name = "S3SyncUtility"
 
-## https://stackoverflow.com/questions/3431825/generating-an-md5-checksum-of-a-file
-## https://stackoverflow.com/questions/6591047/etag-definition-changed-in-amazon-s3/28877788#28877788
+    ## https://stackoverflow.com/questions/3431825/generating-an-md5-checksum-of-a-file
+    ## https://stackoverflow.com/questions/6591047/etag-definition-changed-in-amazon-s3/28877788#28877788
+    
     def md5(self, fname, part_size = 8 * 1024 * 1024):
-        #print("part_size", part_size)
-        #print("file size", os.path.getsize(fname))
+        """
+        Calculate the md5sum for a file using the specified part_size.
+        If a file is larger than the part size then the md5sum is calculated
+        using the same approach used by AWS for multipart uploads to ensure 
+        Etags can be compared during sync.
+
+        Args:
+            fname (str): local file path.
+            part_size: file upload part-size bytes.
+
+        Returns:
+            md5sum
+
+        """
         if os.path.isfile(fname): 
             hash_md5 = hashlib.md5()
             blockcount = 0
@@ -60,24 +78,31 @@ class S3SyncUtility():
                 for chunk in iter(lambda: f.read(part_size), b""):
                     hash_md5 = hashlib.md5()
                     hash_md5.update(chunk)
-                    #print(hash_md5.hexdigest())
                     md5Lst.append(hash_md5.hexdigest())
                     blockcount += 1
             
             if blockcount <= 1:
-                #print(hash_md5.hexdigest())
                 return hash_md5.hexdigest()
             else:
+                ## calculate aws multipart upload etag md5 equivalent
                 c = ''.join(md5Lst)
                 c = unhexlify(c)
                 hash_md5 = hashlib.md5()
                 hash_md5.update(c)
-                #print(hash_md5.hexdigest() + '-' + str(blockcount))
                 return hash_md5.hexdigest() + '-' + str(blockcount)
         else:
             return ''
 
     def dzip_meta(self, key):
+        """
+        Create a dictionary of local file or dir path with associated os.stat data.
+
+        Args:
+           key(str); local file or dir path.
+
+        Returns:
+            (dict): in the format {'local/fileordir':{'uid':'1000', 'mode':'509', etc...}}
+        """
         stat = os.stat(key)
         return {a:b for a,b in zip(["uid", "gid", "mode", "mtime", "size", "ETag", "local"],
                                    [str(stat.st_uid), str(stat.st_gid),
@@ -96,6 +121,13 @@ class DirectoryWalk():
         self.walk_dir(local)
 
     def walk_dir(self, local):
+        """
+        Use os.walk to iterate a local directory and capture os.stat info.
+
+        Args:
+            local(str): local directory path.
+
+        """
         s3util = S3SyncUtility()
         d = sorted(os.walk(local))
         if len(d) == 0 and os.path.isfile(local):
@@ -113,6 +145,15 @@ class DirectoryWalk():
                         self.file.update({os.path.join(a, f):s3util.dzip_meta(os.path.join(a, f))})
     
     def toS3Keys(self, keys, s3path, isdir = True):
+        """
+        Convert local directory and/or file paths to s3 keys.
+
+        Args:
+            keys (dict): local file/directory paths with associated metadata.
+            s3path (str): s3 bucket key path (e.g. buc00/home/)
+            isdir (boolean): True keys are directories, False keys are objects.
+
+        """
         try:
             s3 = None
             for k,v in keys.items():
@@ -132,9 +173,12 @@ class DirectoryWalk():
         except AttributeError as e:
             sys.stderr.write(str(e) + '\n')
 
-## ProgressPercentage is straight from the documentation
-## http://boto3.readthedocs.io/en/latest/_modules/boto3/s3/transfer.html
+
 class ProgressPercentage(object):
+    
+    ## ProgressPercentage is straight from the documentation
+    ## http://boto3.readthedocs.io/en/latest/_modules/boto3/s3/transfer.html
+
     def __init__(self, filename):
         self._filename = filename
         self._size = float(os.path.getsize(filename))
@@ -324,6 +368,19 @@ class SmartS3Sync():
                     sys.exit()
 
     def query(self, prefix, search):
+        """
+        Query an s3 bucket using paginator and list-objects-v2.
+
+        Args:
+            prefix (str): s3 key used to filter bucket.
+            search (OrderedDict): s3 keys to search.
+
+        Returns:
+            matches (OrderedDict): matching s3 keys.
+            
+        e.g. {'s3key/path': {'uid':'1000', 'Etag':'###', 'mode':'33204', etc...'}}
+        
+        """
         # Create a reusable Paginator
         paginator = self.s3cl.get_paginator('list_objects_v2')
 
@@ -333,7 +390,7 @@ class SmartS3Sync():
 
         matches = None
 
-        ## look for kyes in object first, iterate until all pages are 
+        ## look for keys in object first, iterate until all pages are 
         ## exhausted or all keys have been found
         for page in page_iterator:
             for k,v in search.items():
@@ -348,7 +405,25 @@ class SmartS3Sync():
         return matches
 
     def compare_etag(self, s3localfilekeys, matches):
-        
+        """
+        Compare local etag(md5sum) values with s3 etag values.
+
+        Args:
+            s3localfilekeys (OrderedDict): local filepaths converted to s3
+                                           s3 keys.  Local metadata is stored.
+            
+            e.g. {'s3key/path': {'uid':'1000', 'Etag':'###', 'mode':'33204', etc...'}}
+
+            matches (OrderedDict): s3 object keys with metadata.
+
+            e.g. {'s3key/path': {'uid':'1000', 'Etag':'###', 'mode':'33204', etc...'}}
+
+        Returns:
+            needs_sync (OrderedDict): files that need upload because of Etag difference.
+
+            e.g. {'s3key/path': {'uid':'1000', 'Etag':'###', 'mode':'33204', etc...'}}
+
+        """
         ## compare ETags to determine which files need to be uploaded
         needs_sync = None
         
@@ -366,6 +441,10 @@ class SmartS3Sync():
         return needs_sync
 
     def sync_file(self):
+        """
+        Sync a local file with an s3 bucket.
+ 
+        """
         util = S3SyncUtility()
         
         localD[self.local] = util.dzip_meta(key = self.local)
@@ -375,67 +454,73 @@ class SmartS3Sync():
         matches = self.query(key, localD)
         
         needs_sync = self.compare_etag(localD, matches)
+        
+        if needs_sync:
+            with open(self.local, 'rb') as f:
+                meta = {}
+                meta['Metadata'] = search[self.local].values()
+                try:
+                    sys.stderr.write("upload: " + self.local + " to " + key
+                                     + "\n")
 
-        ## if needs_sync
-        with open(self.local, 'rb') as f:
-            meta = {}
-            meta['Metadata'] = search[self.local].values()
-            try:
-                sys.stderr.write("upload: " + self.local + " to " + key
-                                 + "\n")
+                    self.s3cl.upload_fileobj(f, self.bucket, key,
+                                    ExtraArgs = meta,
+                                    Callback = ProgressPercentage(fname))
 
-                self.s3cl.upload_fileobj(f, self.bucket, key,
-                                ExtraArgs = meta,
-                                Callback = ProgressPercentage(fname))
+                    sys.stderr.write("\n")
 
-                sys.stderr.write("\n")
-
-            except ClientError as e:
-                sys.stderr.write(str(e) + "\n")
+                except ClientError as e:
+                    sys.stderr.write(str(e) + "\n")
+        else:
+            sys.stderr.write(self.local + ' is up to date.\n')
 
     def sync_dir(self):
-         ## local dirs converted to s3keys
-         s3localdirkeys = self.walk.toS3Keys(self.walk.root, self.s3path)
-         ## local files converted to s3keys
-         s3localfilekeys = self.walk.toS3Keys(self.walk.file, self.s3path,
-                                              isdir = False)
-         matches = self.query(self.s3path[len(self.bucket) + 1:], s3localfilekeys)
+        """
+        Sync a local directory with an s3 bucket.
 
-         #print(matches)
-         needs_sync = self.compare_etag(s3localfilekeys, matches)
+        """
+        ## local dirs converted to s3keys
+        s3localdirkeys = self.walk.toS3Keys(self.walk.root, self.s3path)
+        ## local files converted to s3keys
+        s3localfilekeys = self.walk.toS3Keys(self.walk.file, self.s3path,
+                                             isdir = False)
+        matches = self.query(self.s3path[len(self.bucket) + 1:], s3localfilekeys)
+
+        #print(matches)
+        needs_sync = self.compare_etag(s3localfilekeys, matches)
        
-         if needs_sync:
-             ## make list of directory keys to check prior to upload
-             keys_to_check = []
-             for k,v in needs_sync.items():
-                 keys_to_check.append(k.rsplit('/', 1)[0] + '/')
-             keys_to_check = sorted(set(keys_to_check))
-             keys_to_check = OrderedDict([(k,s3localdirkeys[k]) for k in keys_to_check if k not in self.s3path])
+        if needs_sync:
+            ## make list of directory keys to check prior to upload
+            keys_to_check = []
+            for k,v in needs_sync.items():
+                keys_to_check.append(k.rsplit('/', 1)[0] + '/')
+            keys_to_check = sorted(set(keys_to_check))
+            keys_to_check = OrderedDict([(k,s3localdirkeys[k]) for k in keys_to_check if k not in self.s3path])
 
-             ## verify keys
-             self.verify_keys(keys = keys_to_check)
+            ## verify keys
+            self.verify_keys(keys = keys_to_check)
 
-             ## complete sync
-             for k, v in needs_sync.items():
-                 with open(v['local'], 'rb') as f:
-                     meta = {}
-                     meta['Metadata'] = v
+            ## complete sync
+            for k, v in needs_sync.items():
+                with open(v['local'], 'rb') as f:
+                    meta = {}
+                    meta['Metadata'] = v
+                    
+                    sys.stderr.write("upload: " + v['local'] + " to "
+                                      + k + "\n")
 
-                     sys.stderr.write("upload: " + v['local'] + " to "
-                                       + k + "\n")
+                    self.s3cl.upload_fileobj(f, self.bucket, k,
+                                 ExtraArgs = meta,
+                                 Callback = ProgressPercentage(v['local']))
 
-                     self.s3cl.upload_fileobj(f, self.bucket, k,
-                                  ExtraArgs = meta,
-                                  Callback = ProgressPercentage(v['local']))
+                    sys.stderr.write("\n")
 
-                     sys.stderr.write("\n")
-
-         else:
-             sys.stderr.write('S3 bucket is up to date\n')
+        else:
+            sys.stderr.write('S3 bucket is up to date\n')
 
     def sync(self):
         """
-        Completes a sync between a local directory or file and an s3 bucket.  
+        Complete a sync between a local directory or file and an s3 bucket.  
 
         """
         ## verify the s3path
