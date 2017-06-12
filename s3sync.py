@@ -315,18 +315,6 @@ class SmartS3Sync():
                                         Metadata = metadata, 
                                         MetadataDirective='REPLACE')
         
-    def create_key(self, key = None, metadata = None, content_type = None): 
-        """
-        Create an s3 object, also known as put-object.
-
-        Args:
-            key (str): s3 key.
-            metadata (dict):  metadata to attach to the object.
-
-        """
-        return self.s3cl.put_object(Bucket = self.bucket, Key = key, 
-                                    Metadata = metadata) 
-     
 
     def verify_keys(self, keys = None):
         """
@@ -372,7 +360,8 @@ class SmartS3Sync():
                 try: 
                     sys.stderr.write("creating key '" + k + "'\n")
 
-                    make_key = self.create_key(key = k, metadata = v)
+                    make_key = self.s3cl.put_object(Bucket = self.bucket, Key = k,
+                                                    Metadata = v)
                      
                 except ClientError:
                     ## Access Denied, s3 permission error
