@@ -286,20 +286,7 @@ class SmartS3Sync():
 
         return prefixes  
 
-
-    def key_exists(self, key = None):
-        """
-        Check if an s3 key exists.
-
-        Args:
-            key (str): s3 key
-
-        Returns:
-            dict
-
-        """
-        return self.s3cl.head_object(Bucket = self.bucket, Key = key)
-        
+   
     def meta_update(self, key = None, metadata = None):
         """
         Update the metadata for an s3 object.
@@ -327,8 +314,8 @@ class SmartS3Sync():
         ## structure of each k --> {'home/somefoler/': {metadata}}
         for k,v in keys.items():
             try:
-                check = self.key_exists(key = k) 
                  
+                check = self.s3cl.head_object(Bucket = self.bucket, Key = k)
                 ## if key does exist check for metadata
                 metaresult = check['Metadata']
                 if len(metaresult) == 0:
