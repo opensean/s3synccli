@@ -17,7 +17,7 @@ when in doubt:
     - for files use "mode":"33204"
 
 Usage:
-    s3sync <localdir> <s3path> [--metadata METADATA --meta_dir_mode METADIR --meta_file_mode METAFILE --profile PROFILE]
+    s3sync <localdir> <s3path> [--metadata METADATA --meta_dir_mode METADIR --meta_file_mode METAFILE --uid UID --gid GID --profile PROFILE]
     s3sync -h | --help 
 
 Options: 
@@ -27,6 +27,8 @@ Options:
     --meta_dir_mode METADIR    mode to use for directories in metadata if none is found locally [default: 509]
     --meta_file_mode METAFILE  mode to use for files in metadata if none if found locally [default: 33204]
     --profile PROFILE          aws profile name [default: default]
+    --uid UID                  user id that will overide any uid information detected for files and directories
+    --gid GID                  groud id that will overid any gid information detected for files and directories
     -h --help                  show this screen.
 """ 
 __author__= "Sean Landry"
@@ -46,6 +48,8 @@ import os
 import hashlib
 from binascii import unhexlify
 import threading
+import magic 
+
 
 class S3SyncUtility():
     
@@ -201,21 +205,23 @@ class SmartS3Sync():
 
     def __init__(self, local = None, s3path = None, metadata = None, 
                  profile = 'default', meta_dir_mode = "509", 
-                 meta_file_mode = "33204"):
+                 meta_file_mode = "33204", uid = None, gid = None):
         
         self.local = local
         self.s3path = s3path
         self.bucket = s3path.split('/', 1)[0]
-        self.metadir, self.metafile = self.parse_meta(metadata, 
-                            dirmode = meta_dir_mode, filemode = meta_file_mode)
-        self.keys = self.parse_prefix(s3path, self.bucket)
         self.walk = DirectoryWalk(local)
         self.profile = profile
+        self.uid = uid
+        self.gid = gid
+        self.metadir, self.metafile = self.parse_meta(metadata,
+                            dirmode = meta_dir_mode, filemode = meta_file_mode, uid = uid, gid = gid)
+        self.keys = self.parse_prefix(s3path, self.bucket, self.metadir)
         self.session = boto3.Session(profile_name = self.profile)
         self.s3cl = boto3.client('s3')
         self.s3rc = boto3.resource('s3')
 
-    def parse_meta(self, meta = None, dirmode = None, filemode = None):
+    def parse_meta(self, meta = None, dirmode = None, filemode = None, uid = None, gid = None):
         """
         Parses passed json argument and adds hardcoded mode for files
         and directories.
@@ -243,12 +249,18 @@ class SmartS3Sync():
         if 'gid' not in metadir:
             metadir["gid"] = str(os.getgid())
             metafile["gid"] = str(os.getgid())
+        if uid:
+            metadir["uid"] = uid
+            metafile["uid"] = uid
+        if gid:
+            metadir["gid"] = gid
+            metafile["gid"] = gid
         
         metadirjs = json.dumps(metadir)
         metafilejs = json.dumps(metafile)
         return metadirjs, metafilejs
 
-    def parse_prefix(self, path = None, bucket = None):
+    def parse_prefix(self, path = None, bucket = None, metadir = None):
         """
         Parse an s3 prefix key path.
 
@@ -267,9 +279,9 @@ class SmartS3Sync():
             temp = temp.rsplit('/', 1)[0]
             if temp:
                 if not prefixes:
-                    prefixes = OrderedDict({temp + '/': json.loads(self.metadir)})
+                    prefixes = OrderedDict({temp + '/': json.loads(metadir)})
                 else:
-                    prefixes.update({temp + '/': json.loads(self.metadir)})
+                    prefixes.update({temp + '/': json.loads(metadir)})
 
 
         return prefixes  
@@ -303,7 +315,7 @@ class SmartS3Sync():
                                         Metadata = metadata, 
                                         MetadataDirective='REPLACE')
         
-    def create_key(self, key = None, metadata = None): 
+    def create_key(self, key = None, metadata = None, content_type = None): 
         """
         Create an s3 object, also known as put-object.
 
@@ -379,7 +391,8 @@ class SmartS3Sync():
             matches (OrderedDict): matching s3 keys.
             
         e.g. {'s3key/path': {'uid':'1000', 'Etag':'###', 'mode':'33204', etc...'}}
-        
+
+
         """
         # Create a reusable Paginator
         paginator = self.s3cl.get_paginator('list_objects_v2')
@@ -389,19 +402,24 @@ class SmartS3Sync():
                                  Prefix = prefix)
 
         matches = None
+    
+        try:
+            ## look for keys in object first, iterate until all pages are 
+            ## exhausted or all keys have been found
+            for page in page_iterator:
+                for k,v in search.items():
+                    if matches:
+                        matches.update({k:item for item in page['Contents'] if item['Key'] == k})
+                    else:
+                        matches = OrderedDict({k:item for item in page['Contents'] if item['Key'] == k})
+                if len(matches) == len(search):
+                    ## no need to continue page iteration if we have found 
+                    ## all keys
 
-        ## look for keys in object first, iterate until all pages are 
-        ## exhausted or all keys have been found
-        for page in page_iterator:
-            for k,v in search.items():
-                if matches:
-                    matches.update({k:item for item in page['Contents'] if item['Key'] == k})
-                else:
-                    matches = OrderedDict({k:item for item in page['Contents'] if item['Key'] == k})
-            if len(matches) == len(search):
-                ## no need to continue page iteration if we have found 
-                ## all keys
-                return matches
+                    return matches
+        except KeyError as e:
+            sys.stderr.write(str(e) + ' ... s3 key does not exist yet\n')
+
         return matches
 
     def compare_etag(self, s3localfilekeys, matches):
@@ -432,7 +450,7 @@ class SmartS3Sync():
             try:
                 b = matches[k]['ETag'].replace('"', '')
                 #print(a, b)
-            except KeyError as e:
+            except (KeyError, TypeError) as e:
                 #sys.stderr.write(a + " needs upload \n")
                 if needs_sync:
                     needs_sync[k] = v
@@ -446,26 +464,40 @@ class SmartS3Sync():
  
         """
         util = S3SyncUtility()
-        
-        localD[self.local] = util.dzip_meta(key = self.local)
+        local_file_dict = {} 
         
         key = self.s3path.split('/', 1)[1] + self.local.rsplit('/', 1)[1]
         
-        matches = self.query(key, localD)
-        
-        needs_sync = self.compare_etag(localD, matches)
+        local_file_dict[key] = util.dzip_meta(key = self.local)
+        matches = self.query(key, local_file_dict)
+                
+        needs_sync = self.compare_etag(local_file_dict, matches)
         
         if needs_sync:
+            ## verify the s3path
+            self.verify_keys(keys = self.keys)
+
             with open(self.local, 'rb') as f:
                 meta = {}
-                meta['Metadata'] = search[self.local].values()
+                ## load the magic file() function
+                m = magic.open(magic.MAGIC_NONE)
+                m_result = m.load()
+                meta['ContentType'] = m.file(self.local).split(';')[0]
+                meta['Metadata'] = local_file_dict[key]
+
+                ## check for uid & gid
+                if self.uid:
+                    meta['Metadata']['uid'] = self.uid
+                if self.gid:
+                    meta['Metadata']['gid'] = self.gid
+
                 try:
                     sys.stderr.write("upload: " + self.local + " to " + key
                                      + "\n")
 
                     self.s3cl.upload_fileobj(f, self.bucket, key,
                                     ExtraArgs = meta,
-                                    Callback = ProgressPercentage(fname))
+                                    Callback = ProgressPercentage(self.local))
 
                     sys.stderr.write("\n")
 
@@ -484,36 +516,55 @@ class SmartS3Sync():
         ## local files converted to s3keys
         s3localfilekeys = self.walk.toS3Keys(self.walk.file, self.s3path,
                                              isdir = False)
-        matches = self.query(self.s3path[len(self.bucket) + 1:], s3localfilekeys)
+
+        s3LocalDirAndFileKeys = s3localdirkeys
+        for k,v in s3localfilekeys.items():
+            s3LocalDirAndFileKeys.update({k:v})
+
+        matches = self.query(self.s3path[len(self.bucket) + 1:], s3LocalDirAndFileKeys)
 
         #print(matches)
-        needs_sync = self.compare_etag(s3localfilekeys, matches)
-       
+        needs_sync = self.compare_etag(s3LocalDirAndFileKeys, matches)
+         
         if needs_sync:
-            ## make list of directory keys to check prior to upload
-            keys_to_check = []
-            for k,v in needs_sync.items():
-                keys_to_check.append(k.rsplit('/', 1)[0] + '/')
-            keys_to_check = sorted(set(keys_to_check))
-            keys_to_check = OrderedDict([(k,s3localdirkeys[k]) for k in keys_to_check if k not in self.s3path])
-
-            ## verify keys
-            self.verify_keys(keys = keys_to_check)
-
+            ## verify the s3path
+            self.verify_keys(keys = self.keys)    
+            
             ## complete sync
             for k, v in needs_sync.items():
-                with open(v['local'], 'rb') as f:
-                    meta = {}
-                    meta['Metadata'] = v
-                    
-                    sys.stderr.write("upload: " + v['local'] + " to "
-                                      + k + "\n")
+                meta = {}
+                m = magic.open(magic.MAGIC_NONE)
+                m_result = m.load()
+                meta['ContentType'] = m.file(v['local']).split(';')[0]
+                meta['Metadata'] = v
+                
+                ## check for uid & gid
+                if self.uid:
+                    meta['Metadata']['uid'] = self.uid
+                if self.gid:
+                    meta['Metadata']['gid'] = self.gid
+                
+                if not k.endswith('/'):
+                    with open(v['local'], 'rb') as f:
+                        sys.stderr.write("upload: " + v['local'] + " to "
+                                          + k + "\n")
 
-                    self.s3cl.upload_fileobj(f, self.bucket, k,
-                                 ExtraArgs = meta,
-                                 Callback = ProgressPercentage(v['local']))
+                        self.s3cl.upload_fileobj(f, self.bucket, k,
+                                     ExtraArgs = meta,
+                                     Callback = ProgressPercentage(v['local']))
 
-                    sys.stderr.write("\n")
+                        sys.stderr.write("\n")
+                else:
+
+                    try:
+                        sys.stderr.write("creating key '" + k + "'\n")
+                        make_key = self.s3cl.put_object(Bucket = self.bucket, Key = k,
+                                    Metadata = meta['Metadata'], ContentType = meta['ContentType'])
+
+                    except ClientError:
+                        ## Access Denied, s3 permission error
+                        sys.stderr.write("exiting...\n")
+                        sys.exit()
 
         else:
             sys.stderr.write('S3 bucket is up to date\n')
@@ -523,12 +574,9 @@ class SmartS3Sync():
         Complete a sync between a local directory or file and an s3 bucket.  
 
         """
-        ## verify the s3path
-        self.verify_keys(keys = self.keys)
-        s3url = 's3://' + self.s3path
         
         if os.path.isfile(self.local):
-            self.sync_file(self.local)
+            self.sync_file()
 
         elif os.path.isdir(self.local):
             self.sync_dir()
@@ -549,6 +597,8 @@ if __name__== "__main__":
                         metadata = options['--metadata'], 
                         profile = options['--profile'],
                         meta_dir_mode = options['--meta_dir_mode'],
-                        meta_file_mode = options['--meta_file_mode'])
+                        meta_file_mode = options['--meta_file_mode'],
+                        uid = options['--uid'],
+                        gid = options['--gid'])
 
     s3_sync.sync()
