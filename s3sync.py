@@ -17,19 +17,20 @@ when in doubt:
     - for files use "mode":"33204"
 
 Usage:
-    s3sync <localdir> <s3path> [--metadata METADATA --meta_dir_mode METADIR --meta_file_mode METAFILE --uid UID --gid GID --profile PROFILE]
+    s3sync <localdir> <s3path> [--metadata METADATA --meta_dir_mode METADIR --meta_file_mode METAFILE --uid UID --gid GID --profile PROFILE --uselocal USELOCAL]
     s3sync -h | --help 
 
 Options: 
-    <localdir>                 local directory file path
-    <s3path>                   s3 key, e.g. cst-compbio-research-00-buc/
-    --metadata METADATA        metadata in json format e.g. '{"uid":"6812", "gid":"6812"}'
-    --meta_dir_mode METADIR    mode to use for directories in metadata if none is found locally [default: 509]
-    --meta_file_mode METAFILE  mode to use for files in metadata if none if found locally [default: 33204]
-    --profile PROFILE          aws profile name [default: default]
-    --uid UID                  user id that will overide any uid information detected for files and directories
-    --gid GID                  groud id that will overid any gid information detected for files and directories
-    -h --help                  show this screen.
+    <localdir>                        local directory file path
+    <s3path>                          s3 key, e.g. cst-compbio-research-00-buc/
+    --metadata METADATA               metadata in json format e.g. '{"uid":"6812", "gid":"6812"}'
+    --meta_dir_mode METADIR           mode to use for directories in metadata if none is found locally [default: 509]
+    --meta_file_mode METAFILE         mode to use for files in metadata if none if found locally [default: 33204]
+    --profile PROFILE                 aws profile name [default: default]
+    --uid UID                         user id that will overide any uid information detected for files and directories
+    --gid GID                         groud id that will overid any gid information detected for files and directories
+    --uselocal USELOCAL               use local data stored in .s3syncli/local_data_store.json to save on md5sum computation.
+    -h --help                         show this screen.
 """ 
 __author__= "Sean Landry"
 __email__= "sean.d.landry@gmail.com"
@@ -49,7 +50,7 @@ import hashlib
 from binascii import unhexlify
 import threading
 import magic 
-
+import time
 
 class S3SyncUtility():
     
@@ -97,7 +98,7 @@ class S3SyncUtility():
         else:
             return ''
 
-    def dzip_meta(self, key):
+    def dzip_meta(self, key, md5sum = False):
         """
         Create a dictionary of local file or dir path with associated os.stat data.
 
@@ -107,21 +108,32 @@ class S3SyncUtility():
         Returns:
             (dict): in the format {'local/fileordir':{'uid':'1000', 'mode':'509', etc...}}
         """
-        stat = os.stat(key)
-        return {a:b for a,b in zip(["uid", "gid", "mode", "mtime", "size", "ETag", "local"],
-                                   [str(stat.st_uid), str(stat.st_gid),
-                                    str(stat.st_mode), str(int(stat.st_mtime)),
-                                    str(stat.st_size), str(self.md5(key)), key])}
+        mystat = os.stat(key)
+        keyLst = ["uid", "gid", "mode", "mtime", "size", "ETag", "local"]
+
+        ## if md5sum False avoid calculating md5sum
+        if md5sum:
+            statLst = [str(mystat.st_uid), str(mystat.st_gid),
+                                    str(mystat.st_mode), str(mystat.st_mtime),
+                                    str(mystat.st_size), str(self.md5(key)), key]
+        else:
+            statLst = [str(mystat.st_uid), str(mystat.st_gid),
+                                    str(mystat.st_mode), str(mystat.st_mtime),
+                                    str(mystat.st_size), '', key]
+        
+        return {a:b for a,b in zip(keyLst, statLst)}
+
 
 
 
 class DirectoryWalk():
 
-    def __init__(self, local = None):
+    def __init__(self, local = None, md5sum = False):
         self.local = local
         self.root = None
         self.file = None
         self.isdir = True
+        self.md5sum = md5sum
         self.walk_dir(local)
 
     def walk_dir(self, local):
@@ -205,7 +217,11 @@ class SmartS3Sync():
 
     def __init__(self, local = None, s3path = None, metadata = None, 
                  profile = 'default', meta_dir_mode = "509", 
-                 meta_file_mode = "33204", uid = None, gid = None):
+                 meta_file_mode = "33204", uid = None, gid = None,
+                 uselocal = False,
+                 local_data_path = os.environ.get('HOME') + '/.s3synccli',
+                 local_md5_data = 'local_md5_store.json',
+                 logs_data = 'logger.json'):
         
         self.local = local
         self.s3path = s3path
@@ -220,6 +236,10 @@ class SmartS3Sync():
         self.session = boto3.Session(profile_name = self.profile)
         self.s3cl = boto3.client('s3')
         self.s3rc = boto3.resource('s3')
+        self.uselocal = uselocal
+        self.local_data_path = self.init_local_data(local_data_path, uselocal)
+        self.local_md5_data = local_md5_data
+        self.logs_data = logs_data
 
     def parse_meta(self, meta = None, dirmode = None, filemode = None, uid = None, gid = None):
         """
@@ -255,7 +275,8 @@ class SmartS3Sync():
         if gid:
             metadir["gid"] = gid
             metafile["gid"] = gid
-        
+        metadir['mtime'] = str(int(time.time()))
+        metafile['mtime'] = str(int(time.time()))
         metadirjs = json.dumps(metadir)
         metafilejs = json.dumps(metafile)
         return metadirjs, metafilejs
@@ -286,7 +307,74 @@ class SmartS3Sync():
 
         return prefixes  
 
-   
+    def init_local_data(self, local_data_path, uselocal):
+    
+        if not os.path.exists(local_data_path) and uselocal:
+            os.mkdir(local_data_path)
+        
+        return local_data_path
+
+    def check_local_md5_store(self, keys):
+
+        if not os.path.exists(self.local_data_path):
+            os.mkdir(self.local_data_path)
+        
+        md5_data_path = os.path.join(self.local_data_path, self.local_md5_data)  
+        
+        util = S3SyncUtility()
+
+        if os.path.isfile(md5_data_path):
+            fdict = {}
+            keys_updated = None
+            with open(md5_data_path, 'r') as f:
+                fdict = json.loads(f.read())
+                
+                for k,v in keys.items():
+                    try:
+                        ## check last modified, if different compute md5
+                        if fdict[k]['mtime'] != v['mtime']:
+                            if keys_updated:
+                                keys_updated.update({k:v})
+                            else:
+                                keys_updated = OrderedDict({k:v})
+                            
+                            keys_updated[k]['ETag'] = util.md5(k)
+                            fdict[k] = keys_updated[k]
+                        else:
+                            ## if same last modified, use stored md5 tag
+                            if keys_updated:
+                                keys_updated.update({k:v})
+                            else:
+                                keys_updated = OrderedDict({k:v})
+                            keys_updated[k]['ETag'] = util.md5(k)
+                    except KeyError:
+                        ## if key not found locally compute md5, and store local
+                        if keys_updated:
+                            keys_updated.update({k:v})
+                        else:
+                            keys_updated = OrderedDict({k:v})
+                        keys_updated[k]['ETag'] = util.md5(k)
+                        
+                        ## update local data store
+                        fdict[k] = v
+            with open(md5_data_path, 'w') as f:
+                json.dump(fdict, f)
+          
+            return keys_updated
+        else:
+             sys.stderr.write('no local md5 data found, calculating now ...\n')
+             
+             for k,v in keys.items():
+                 keys[k]['ETag'] = util.md5(k)
+             
+             sys.stderr.write('writing md5 data to ' + md5_data_path + '\n')
+
+             with open(md5_data_path, 'w') as f:
+                 json.dump(keys, f)
+
+             return keys
+    
+
     def meta_update(self, key = None, metadata = None):
         """
         Update the metadata for an s3 object.
@@ -407,16 +495,14 @@ class SmartS3Sync():
             s3localfilekeys (OrderedDict): local filepaths converted to s3
                                            s3 keys.  Local metadata is stored.
             
-            e.g. {'s3key/path': {'uid':'1000', 'Etag':'###', 'mode':'33204', etc...'}}
-
             matches (OrderedDict): s3 object keys with metadata.
-
-            e.g. {'s3key/path': {'uid':'1000', 'Etag':'###', 'mode':'33204', etc...'}}
 
         Returns:
             needs_sync (OrderedDict): files that need upload because of Etag difference.
-
-            e.g. {'s3key/path': {'uid':'1000', 'Etag':'###', 'mode':'33204', etc...'}}
+            
+            OrderedDict structure for args and return:
+            
+            {'s3key/path': {'uid':'1000', 'Etag':'###', 'mode':'33204', etc...'}}
 
         """
         ## compare ETags to determine which files need to be uploaded
@@ -445,7 +531,8 @@ class SmartS3Sync():
         
         key = self.s3path.split('/', 1)[1] + self.local.rsplit('/', 1)[1]
         
-        local_file_dict[key] = util.dzip_meta(key = self.local)
+        local_file_dict[key] = util.dzip_meta(key = self.local, md5sum = True)
+        
         matches = self.query(key, local_file_dict)
                 
         needs_sync = self.compare_etag(local_file_dict, matches)
@@ -488,6 +575,7 @@ class SmartS3Sync():
         Sync a local directory with an s3 bucket.
 
         """
+        utility = S3SyncUtility()
         ## local dirs converted to s3keys
         s3localdirkeys = self.walk.toS3Keys(self.walk.root, self.s3path)
         ## local files converted to s3keys
@@ -504,6 +592,14 @@ class SmartS3Sync():
             else:
                 s3LocalDirAndFileKeys = OrderedDict({k:v})
 
+
+        if self.uselocal:
+            s3LocalDirAndFileKeys = self.check_local_md5_store(s3LocalDirAndFileKeys)
+        else:
+           for k,v in s3LocalDirAndFileKeys.items():
+               s3LocalDirAndFileKeys[k]['ETag'] = utility.md5(s3LocalDirAndFileKeys[k]['local'])
+        
+        ## paginate bucket
         matches = self.query(self.s3path[len(self.bucket) + 1:], s3LocalDirAndFileKeys)
 
         #print(matches)
@@ -582,6 +678,7 @@ if __name__== "__main__":
                         meta_dir_mode = options['--meta_dir_mode'],
                         meta_file_mode = options['--meta_file_mode'],
                         uid = options['--uid'],
-                        gid = options['--gid'])
+                        gid = options['--gid'],
+                        uselocal = options['--uselocal'])
 
     s3_sync.sync()
