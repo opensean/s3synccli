@@ -205,7 +205,7 @@ class SmartS3Sync():
 
     def __init__(self, local = None, s3path = None, metadata = None, 
                  profile = 'default', meta_dir_mode = "509", 
-                 meta_file_mode = "33204", uid = None, gid = None:
+                 meta_file_mode = "33204", uid = None, gid = None):
         
         self.local = local
         self.s3path = s3path
