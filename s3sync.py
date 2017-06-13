@@ -110,7 +110,7 @@ class S3SyncUtility():
         stat = os.stat(key)
         return {a:b for a,b in zip(["uid", "gid", "mode", "mtime", "size", "ETag", "local"],
                                    [str(stat.st_uid), str(stat.st_gid),
-                                    str(stat.st_mode), str(stat.st_mtime),
+                                    str(stat.st_mode), str(int(stat.st_mtime)),
                                     str(stat.st_size), str(self.md5(key)), key])}
 
 
@@ -370,6 +370,7 @@ class SmartS3Sync():
 
 
         """
+        
         # Create a reusable Paginator
         paginator = self.s3cl.get_paginator('list_objects_v2')
 
