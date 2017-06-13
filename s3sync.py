@@ -215,14 +215,10 @@ class SmartS3Sync():
 
     def __init__(self, local = None, s3path = None, metadata = None, 
                  profile = 'default', meta_dir_mode = "509", 
-<<<<<<< HEAD
                  meta_file_mode = "33204", uid = None, gid = None,
                  local_data_path = os.environ.get('HOME') + '/.s3synccli',
                  local_md5_data = 'local_md5_store.json',
                  logs_data = 'logger.json'):
-=======
-                 meta_file_mode = "33204", uid = None, gid = None):
->>>>>>> master
         
         self.local = local
         self.s3path = s3path
@@ -319,22 +315,54 @@ class SmartS3Sync():
             os.mkdir(self.local_data_path)
         
         md5_data_path = os.path.join(self.local_data_path, self.local_md5_data)  
-       
+        
+        util = S3SyncUtility()
+
         if os.path.isfile(md5_data_path):
-            with open(md5_data_path, 'r') as f:
-                fjson = json.loads(f)
-                print(fjson)
+            with open(md5_data_path, 'r+') as f:
+                fdict = OrderedDict(json.loads(f.read())
+                keys_updated = None
+                for k,v in keys.items():
+                    try:
+                        ## check last modified, if different compute md5
+                        if fdict[k]['mtime'] != v['mtime']:
+                            if keys_updated:
+                                keys_updated.update({k:v})
+                            else:
+                                keys_updated = OrderedDict({k:v})
+                            
+                            keys_updated[k]['Etag'] = util.md5(k)
+                            fdict[k] = keys_updated[k]
+                        else:
+                            ## if same last modified, use stored md5 tag
+                            if keys_updated:
+                                keys_updated.update({k:v})
+                            else:
+                                keys_updated = OrderedDict({k:v})
+                            keys_updated[k]['Etag'] = util.md5(k)
+                    except KeyError:
+                        ## if key not found locally compute md5, and store local
+                        if keys_updated:
+                            keys_updated.update({k:v})
+                        else:
+                            keys_updated = OrderedDict({k:v})
+                        keys_updated[k]['Etag'] = util.md5(k)
+                        
+                        ## update local data store
+                        fdict[k] = v
+                
+                f.write(json.dumps(fdict))
+                return keys_updated
         else:
              sys.stderr.write('no local md5 data found, calculating now ...\n')
              
-             util = S3SyncUtility()
              for k,v in keys.items():
                  keys[k]['Etag'] = util.md5(k)
              
              sys.stderr.write('writing md5 data to ' + md5_data_path + '\n')
 
              with open(md5_data_path, 'w') as f:
-                 json.dump(keys, f)
+                 f.write(json.dumps(keys))
 
              return keys
     
