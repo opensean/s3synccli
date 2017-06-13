@@ -17,19 +17,20 @@ when in doubt:
     - for files use "mode":"33204"
 
 Usage:
-    s3sync <localdir> <s3path> [--metadata METADATA --meta_dir_mode METADIR --meta_file_mode METAFILE --uid UID --gid GID --profile PROFILE]
+    s3sync <localdir> <s3path> [--metadata METADATA --meta_dir_mode METADIR --meta_file_mode METAFILE --uid UID --gid GID --profile PROFILE --uselocal USELOCAL]
     s3sync -h | --help 
 
 Options: 
-    <localdir>                 local directory file path
-    <s3path>                   s3 key, e.g. cst-compbio-research-00-buc/
-    --metadata METADATA        metadata in json format e.g. '{"uid":"6812", "gid":"6812"}'
-    --meta_dir_mode METADIR    mode to use for directories in metadata if none is found locally [default: 509]
-    --meta_file_mode METAFILE  mode to use for files in metadata if none if found locally [default: 33204]
-    --profile PROFILE          aws profile name [default: default]
-    --uid UID                  user id that will overide any uid information detected for files and directories
-    --gid GID                  groud id that will overid any gid information detected for files and directories
-    -h --help                  show this screen.
+    <localdir>                        local directory file path
+    <s3path>                          s3 key, e.g. cst-compbio-research-00-buc/
+    --metadata METADATA               metadata in json format e.g. '{"uid":"6812", "gid":"6812"}'
+    --meta_dir_mode METADIR           mode to use for directories in metadata if none is found locally [default: 509]
+    --meta_file_mode METAFILE         mode to use for files in metadata if none if found locally [default: 33204]
+    --profile PROFILE                 aws profile name [default: default]
+    --uid UID                         user id that will overide any uid information detected for files and directories
+    --gid GID                         groud id that will overid any gid information detected for files and directories
+    --uselocal USELOCAL               use local data stored in .s3syncli/local_data_store.json to save on md5sum computation.
+    -h --help                         show this screen.
 """ 
 __author__= "Sean Landry"
 __email__= "sean.d.landry@gmail.com"
@@ -216,7 +217,7 @@ class SmartS3Sync():
     def __init__(self, local = None, s3path = None, metadata = None, 
                  profile = 'default', meta_dir_mode = "509", 
                  meta_file_mode = "33204", uid = None, gid = None,
-                 use_local_data_store = False,
+                 uselocal = False,
                  local_data_path = os.environ.get('HOME') + '/.s3synccli',
                  local_md5_data = 'local_md5_store.json',
                  logs_data = 'logger.json'):
@@ -234,7 +235,8 @@ class SmartS3Sync():
         self.session = boto3.Session(profile_name = self.profile)
         self.s3cl = boto3.client('s3')
         self.s3rc = boto3.resource('s3')
-        self.local_data_path = self.init_local_data(local_data_path)
+        self.uselocal = uselocal
+        self.local_data_path = self.init_local_data(local_data_path, uselocal)
         self.local_md5_data = local_md5_data
         self.logs_data = logs_data
 
@@ -304,9 +306,9 @@ class SmartS3Sync():
 
         return prefixes  
 
-    def init_local_data(self, local_data_path):
+    def init_local_data(self, local_data_path, uselocal):
     
-        if not os.path.exists(local_data_path):
+        if not os.path.exists(local_data_path) and uselocal:
             os.mkdir(local_data_path)
         
         return local_data_path
@@ -527,7 +529,8 @@ class SmartS3Sync():
         
         key = self.s3path.split('/', 1)[1] + self.local.rsplit('/', 1)[1]
         
-        local_file_dict[key] = util.dzip_meta(key = self.local)
+        local_file_dict[key] = util.dzip_meta(key = self.local, md5sum = True)
+        
         matches = self.query(key, local_file_dict)
                 
         needs_sync = self.compare_etag(local_file_dict, matches)
@@ -570,6 +573,7 @@ class SmartS3Sync():
         Sync a local directory with an s3 bucket.
 
         """
+        utility = S3SyncUtility()
         ## local dirs converted to s3keys
         s3localdirkeys = self.walk.toS3Keys(self.walk.root, self.s3path)
         ## local files converted to s3keys
@@ -586,6 +590,14 @@ class SmartS3Sync():
             else:
                 s3LocalDirAndFileKeys = OrderedDict({k:v})
 
+
+        if self.uselocal:
+            s3LocalDirAndFileKeys = self.check_local_md5_store(s3LocalDirAndFileKeys)
+        else:
+           for k,v in s3LocalDirAndFileKeys.items():
+               s3LocalDirAndFileKeys[k]['ETag'] = utility.md5(s3LocalDirAndFileKeys[k]['local'])
+        
+        ## paginate bucket
         matches = self.query(self.s3path[len(self.bucket) + 1:], s3LocalDirAndFileKeys)
 
         #print(matches)
@@ -664,6 +676,7 @@ if __name__== "__main__":
                         meta_dir_mode = options['--meta_dir_mode'],
                         meta_file_mode = options['--meta_file_mode'],
                         uid = options['--uid'],
-                        gid = options['--gid'])
+                        gid = options['--gid'],
+                        uselocal = options['--uselocal'])
 
     s3_sync.sync()
