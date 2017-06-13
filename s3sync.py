@@ -49,7 +49,7 @@ import hashlib
 from binascii import unhexlify
 import threading
 import magic 
-
+import time
 
 class S3SyncUtility():
     
@@ -216,6 +216,7 @@ class SmartS3Sync():
     def __init__(self, local = None, s3path = None, metadata = None, 
                  profile = 'default', meta_dir_mode = "509", 
                  meta_file_mode = "33204", uid = None, gid = None,
+                 use_local_data_store = False,
                  local_data_path = os.environ.get('HOME') + '/.s3synccli',
                  local_md5_data = 'local_md5_store.json',
                  logs_data = 'logger.json'):
@@ -271,7 +272,8 @@ class SmartS3Sync():
         if gid:
             metadir["gid"] = gid
             metafile["gid"] = gid
-        
+        metadir['mtime'] = str(int(time.time()))
+        metafile['mtime'] = str(int(time.time()))
         metadirjs = json.dumps(metadir)
         metafilejs = json.dumps(metafile)
         return metadirjs, metafilejs
@@ -319,9 +321,11 @@ class SmartS3Sync():
         util = S3SyncUtility()
 
         if os.path.isfile(md5_data_path):
-            with open(md5_data_path, 'r+') as f:
-                fdict = OrderedDict(json.loads(f.read())
-                keys_updated = None
+            fdict = {}
+            keys_updated = None
+            with open(md5_data_path, 'r') as f:
+                fdict = json.loads(f.read())
+                
                 for k,v in keys.items():
                     try:
                         ## check last modified, if different compute md5
@@ -331,7 +335,7 @@ class SmartS3Sync():
                             else:
                                 keys_updated = OrderedDict({k:v})
                             
-                            keys_updated[k]['Etag'] = util.md5(k)
+                            keys_updated[k]['ETag'] = util.md5(k)
                             fdict[k] = keys_updated[k]
                         else:
                             ## if same last modified, use stored md5 tag
@@ -339,30 +343,31 @@ class SmartS3Sync():
                                 keys_updated.update({k:v})
                             else:
                                 keys_updated = OrderedDict({k:v})
-                            keys_updated[k]['Etag'] = util.md5(k)
+                            keys_updated[k]['ETag'] = util.md5(k)
                     except KeyError:
                         ## if key not found locally compute md5, and store local
                         if keys_updated:
                             keys_updated.update({k:v})
                         else:
                             keys_updated = OrderedDict({k:v})
-                        keys_updated[k]['Etag'] = util.md5(k)
+                        keys_updated[k]['ETag'] = util.md5(k)
                         
                         ## update local data store
                         fdict[k] = v
-                
-                f.write(json.dumps(fdict))
-                return keys_updated
+            with open(md5_data_path, 'w') as f:
+                json.dump(fdict, f)
+          
+            return keys_updated
         else:
              sys.stderr.write('no local md5 data found, calculating now ...\n')
              
              for k,v in keys.items():
-                 keys[k]['Etag'] = util.md5(k)
+                 keys[k]['ETag'] = util.md5(k)
              
              sys.stderr.write('writing md5 data to ' + md5_data_path + '\n')
 
              with open(md5_data_path, 'w') as f:
-                 f.write(json.dumps(keys))
+                 json.dump(keys, f)
 
              return keys
     
@@ -486,16 +491,14 @@ class SmartS3Sync():
             s3localfilekeys (OrderedDict): local filepaths converted to s3
                                            s3 keys.  Local metadata is stored.
             
-            e.g. {'s3key/path': {'uid':'1000', 'Etag':'###', 'mode':'33204', etc...'}}
-
             matches (OrderedDict): s3 object keys with metadata.
-
-            e.g. {'s3key/path': {'uid':'1000', 'Etag':'###', 'mode':'33204', etc...'}}
 
         Returns:
             needs_sync (OrderedDict): files that need upload because of Etag difference.
-
-            e.g. {'s3key/path': {'uid':'1000', 'Etag':'###', 'mode':'33204', etc...'}}
+            
+            OrderedDict structure for args and return:
+            
+            {'s3key/path': {'uid':'1000', 'Etag':'###', 'mode':'33204', etc...'}}
 
         """
         ## compare ETags to determine which files need to be uploaded
