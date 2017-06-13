@@ -492,10 +492,16 @@ class SmartS3Sync():
         ## local files converted to s3keys
         s3localfilekeys = self.walk.toS3Keys(self.walk.file, self.s3path,
                                              isdir = False)
-
-        s3LocalDirAndFileKeys = s3localdirkeys
+        if s3localdirkeys:
+            s3LocalDirAndFileKeys = s3localdirkeys
+        else:
+            s3LocalDirAndFileKeys = None
+        
         for k,v in s3localfilekeys.items():
-            s3LocalDirAndFileKeys.update({k:v})
+            if s3LocalDirAndFileKeys:
+                s3LocalDirAndFileKeys.update({k:v})
+            else:
+                s3LocalDirAndFileKeys = OrderedDict({k:v})
 
         matches = self.query(self.s3path[len(self.bucket) + 1:], s3LocalDirAndFileKeys)
 
