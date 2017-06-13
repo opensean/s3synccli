@@ -97,7 +97,7 @@ class S3SyncUtility():
         else:
             return ''
 
-    def dzip_meta(self, key, md5sum = False):
+    def dzip_meta(self, key):
         """
         Create a dictionary of local file or dir path with associated os.stat data.
 
@@ -107,31 +107,21 @@ class S3SyncUtility():
         Returns:
             (dict): in the format {'local/fileordir':{'uid':'1000', 'mode':'509', etc...}}
         """
-        mystat = os.stat(key)
-        keyLst = ["uid", "gid", "mode", "mtime", "size", "ETag", "local"]
-
-        ## if md5sum False avoid calculating md5sum
-        if md5sum:
-            statLst = [str(mystat.st_uid), str(mystat.st_gid),
-                                    str(mystat.st_mode), str(mystat.st_mtime),
-                                    str(mystat.st_size), str(self.md5(key)), key]
-        else:
-            statLst = [str(mystat.st_uid), str(mystat.st_gid),
-                                    str(mystat.st_mode), str(mystat.st_mtime),
-                                    str(mystat.st_size), '', key]
-        
-        return {a:b for a,b in zip(keyLst, statLst)}
+        stat = os.stat(key)
+        return {a:b for a,b in zip(["uid", "gid", "mode", "mtime", "size", "ETag", "local"],
+                                   [str(stat.st_uid), str(stat.st_gid),
+                                    str(stat.st_mode), str(stat.st_mtime),
+                                    str(stat.st_size), str(self.md5(key)), key])}
 
 
 
 class DirectoryWalk():
 
-    def __init__(self, local = None, md5sum = False):
+    def __init__(self, local = None):
         self.local = local
         self.root = None
         self.file = None
         self.isdir = True
-        self.md5sum = md5sum
         self.walk_dir(local)
 
     def walk_dir(self, local):
@@ -215,14 +205,7 @@ class SmartS3Sync():
 
     def __init__(self, local = None, s3path = None, metadata = None, 
                  profile = 'default', meta_dir_mode = "509", 
-<<<<<<< HEAD
-                 meta_file_mode = "33204", uid = None, gid = None,
-                 local_data_path = os.environ.get('HOME') + '/.s3synccli',
-                 local_md5_data = 'local_md5_store.json',
-                 logs_data = 'logger.json'):
-=======
                  meta_file_mode = "33204", uid = None, gid = None):
->>>>>>> master
         
         self.local = local
         self.s3path = s3path
@@ -237,9 +220,6 @@ class SmartS3Sync():
         self.session = boto3.Session(profile_name = self.profile)
         self.s3cl = boto3.client('s3')
         self.s3rc = boto3.resource('s3')
-        self.local_data_path = self.init_local_data(local_data_path)
-        self.local_md5_data = local_md5_data
-        self.logs_data = logs_data
 
     def parse_meta(self, meta = None, dirmode = None, filemode = None, uid = None, gid = None):
         """
@@ -306,39 +286,7 @@ class SmartS3Sync():
 
         return prefixes  
 
-    def init_local_data(self, local_data_path):
-    
-        if not os.path.exists(local_data_path):
-            os.mkdir(local_data_path)
-        
-        return local_data_path
-
-    def check_local_md5_store(self, keys):
-
-        if not os.path.exists(self.local_data_path):
-            os.mkdir(self.local_data_path)
-        
-        md5_data_path = os.path.join(self.local_data_path, self.local_md5_data)  
-       
-        if os.path.isfile(md5_data_path):
-            with open(md5_data_path, 'r') as f:
-                fjson = json.loads(f)
-                print(fjson)
-        else:
-             sys.stderr.write('no local md5 data found, calculating now ...\n')
-             
-             util = S3SyncUtility()
-             for k,v in keys.items():
-                 keys[k]['Etag'] = util.md5(k)
-             
-             sys.stderr.write('writing md5 data to ' + md5_data_path + '\n')
-
-             with open(md5_data_path, 'w') as f:
-                 json.dump(keys, f)
-
-             return keys
-    
-
+   
     def meta_update(self, key = None, metadata = None):
         """
         Update the metadata for an s3 object.
@@ -546,14 +494,12 @@ class SmartS3Sync():
                                              isdir = False)
         if s3localdirkeys:
             s3LocalDirAndFileKeys = s3localdirkeys
-        else:
-            s3LocalDirAndFileKeys = None
         
         for k,v in s3localfilekeys.items():
             if s3LocalDirAndFileKeys:
                 s3LocalDirAndFileKeys.update({k:v})
             else:
-                s3LocalDirAndFileKeys = OrderedDict({k:v})
+                s3LocalDirAndFileKeys = OrdereDict({k:v})
 
         matches = self.query(self.s3path[len(self.bucket) + 1:], s3LocalDirAndFileKeys)
 
