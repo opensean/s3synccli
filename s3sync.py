@@ -205,7 +205,10 @@ class SmartS3Sync():
 
     def __init__(self, local = None, s3path = None, metadata = None, 
                  profile = 'default', meta_dir_mode = "509", 
-                 meta_file_mode = "33204", uid = None, gid = None:
+                 meta_file_mode = "33204", uid = None, gid = None,
+                 local_data_path = os.environ.get('HOME') + '/.s3synccli'
+                 local_md5_store = 'local_md5_store.gz',
+                 logs_store = 'logger.gz':
         
         self.local = local
         self.s3path = s3path
@@ -220,6 +223,9 @@ class SmartS3Sync():
         self.session = boto3.Session(profile_name = self.profile)
         self.s3cl = boto3.client('s3')
         self.s3rc = boto3.resource('s3')
+        self.local_data_path = local_data_path
+        self.local_md5_store = local_md5_store
+        self.logs_store = logs_store
 
     def parse_meta(self, meta = None, dirmode = None, filemode = None, uid = None, gid = None):
         """
@@ -286,7 +292,14 @@ class SmartS3Sync():
 
         return prefixes  
 
-   
+  
+    def check_local_md5_store(self):
+
+        if os.path.exists(self.local_data_path):
+            pass
+        else:
+            os.mkdir(self.local_data_path)
+
     def meta_update(self, key = None, metadata = None):
         """
         Update the metadata for an s3 object.
