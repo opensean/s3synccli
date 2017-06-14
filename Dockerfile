@@ -8,6 +8,6 @@ LABEL s3synccli.version="0.1" \
 
 RUN useradd -ms /bin/bash s3synccli
 COPY . /home/s3synccli/
-RUN chown -R s3synccli /home/s3synccli
+RUN chown -R s3synccli:s3synccli /home/s3synccli
 USER s3synccli
 WORKDIR /home/s3synccli
