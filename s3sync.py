@@ -114,11 +114,11 @@ class S3SyncUtility():
         ## if md5sum False avoid calculating md5sum
         if md5sum:
             statLst = [str(mystat.st_uid), str(mystat.st_gid),
-                                    str(mystat.st_mode), str(mystat.st_mtime),
+                                    str(mystat.st_mode), str(int(mystat.st_mtime)),
                                     str(mystat.st_size), str(self.md5(key)), key]
         else:
             statLst = [str(mystat.st_uid), str(mystat.st_gid),
-                                    str(mystat.st_mode), str(mystat.st_mtime),
+                                    str(mystat.st_mode), str(int(mystat.st_mtime)),
                                     str(mystat.st_size), '', key]
         
         return {a:b for a,b in zip(keyLst, statLst)}
@@ -548,7 +548,11 @@ class SmartS3Sync():
                 m_result = m.load()
                 meta['ContentType'] = m.file(self.local).split(';')[0]
                 meta['Metadata'] = local_file_dict[key]
-
+               
+                ## remove unneccesary metadata 
+                rm_local_etag = meta['Metadata'].pop('ETag')
+                rm_local_path = meta['Metadata'].pop('local')
+                
                 ## check for uid & gid
                 if self.uid:
                     meta['Metadata']['uid'] = self.uid
@@ -616,7 +620,8 @@ class SmartS3Sync():
                 m_result = m.load()
                 meta['ContentType'] = m.file(v['local']).split(';')[0]
                 meta['Metadata'] = v
-                
+
+
                 ## check for uid & gid
                 if self.uid:
                     meta['Metadata']['uid'] = self.uid
@@ -627,10 +632,16 @@ class SmartS3Sync():
                     with open(v['local'], 'rb') as f:
                         sys.stderr.write("upload: " + v['local'] + " to "
                                           + k + "\n")
+                
+                        l = v['local']
 
+                        ## remove unneccesary metadata 
+                        rm_local_etag = meta['Metadata'].pop('ETag')
+                        rm_local_path = meta['Metadata'].pop('local')
+                        
                         self.s3cl.upload_fileobj(f, self.bucket, k,
                                      ExtraArgs = meta,
-                                     Callback = ProgressPercentage(v['local']))
+                                     Callback = ProgressPercentage(l))
 
                         sys.stderr.write("\n")
                 else:
