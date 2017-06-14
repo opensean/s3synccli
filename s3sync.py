@@ -29,7 +29,7 @@ Options:
     --profile PROFILE                 aws profile name [default: default]
     --uid UID                         user id that will overide any uid information detected for files and directories
     --gid GID                         groud id that will overid any gid information detected for files and directories
-    --uselocal USELOCAL               use local data stored in .s3syncli/local_data_store.json to save on md5sum computation.
+    --localcache LOCALCACHE           use local data stored in .s3syncli/local_data_store.json to save on md5sum computation.
     -h --help                         show this screen.
 """ 
 __author__= "Sean Landry"
@@ -218,10 +218,10 @@ class SmartS3Sync():
     def __init__(self, local = None, s3path = None, metadata = None, 
                  profile = 'default', meta_dir_mode = "509", 
                  meta_file_mode = "33204", uid = None, gid = None,
-                 uselocal = False,
-                 local_data_path = os.environ.get('HOME') + '/.s3synccli',
-                 local_md5_data = 'local_md5_store.json',
-                 logs_data = 'logger.json'):
+                 localcache = False,
+                 local_cache_path = os.environ.get('HOME') + '/.s3synccli',
+                 local_md5_cache = 'local_md5_store.json',
+                 logs_fname = 's3synccli.log'):
         
         self.local = local
         self.s3path = s3path
@@ -236,10 +236,10 @@ class SmartS3Sync():
         self.session = boto3.Session(profile_name = self.profile)
         self.s3cl = boto3.client('s3')
         self.s3rc = boto3.resource('s3')
-        self.uselocal = uselocal
-        self.local_data_path = self.init_local_data(local_data_path, uselocal)
-        self.local_md5_data = local_md5_data
-        self.logs_data = logs_data
+        self.localcache = localcache
+        self.local_md5_cache = local_md5_cache
+        self.local_cache_path = self.init_local_data(local_cache_path, localcache)
+        self.logs_fname = logs_fname
 
     def parse_meta(self, meta = None, dirmode = None, filemode = None, uid = None, gid = None):
         """
@@ -307,70 +307,64 @@ class SmartS3Sync():
 
         return prefixes  
 
-    def init_local_data(self, local_data_path, uselocal):
+    def init_local_data(self, local_cache_path, localcache):
     
-        if not os.path.exists(local_data_path) and uselocal:
-            os.mkdir(local_data_path)
+        if not os.path.exists(local_cache_path) and localcache:
+            os.mkdir(local_cache_path)
         
-        return local_data_path
+        return local_cache_path
 
     def check_local_md5_store(self, keys):
 
-        if not os.path.exists(self.local_data_path):
-            os.mkdir(self.local_data_path)
+        if not os.path.exists(self.local_cache_path):
+            os.mkdir(self.local_cache_path)
         
-        md5_data_path = os.path.join(self.local_data_path, self.local_md5_data)  
+        md5_data_path = os.path.join(self.local_cache_path, self.local_md5_cache)  
         
         util = S3SyncUtility()
 
         if os.path.isfile(md5_data_path):
             fdict = {}
-            keys_updated = None
+            keys_updated = OrderedDict({})
             with open(md5_data_path, 'r') as f:
                 fdict = json.loads(f.read())
                 
                 for k,v in keys.items():
                     try:
                         ## check last modified, if different compute md5
-                        if fdict[k]['mtime'] != v['mtime']:
-                            if keys_updated:
-                                keys_updated.update({k:v})
-                            else:
-                                keys_updated = OrderedDict({k:v})
+                        if fdict[v['local']]['mtime'] != v['mtime']:
+                            keys_updated.update({k:v})
                             
                             keys_updated[k]['ETag'] = util.md5(k)
-                            fdict[k] = keys_updated[k]
+                            fdict[v['local']] = {'ETag':keys_updated[k]['ETag'], 'mtime':v['mtime']}
                         else:
                             ## if same last modified, use stored md5 tag
-                            if keys_updated:
-                                keys_updated.update({k:v})
-                            else:
-                                keys_updated = OrderedDict({k:v})
-                            keys_updated[k]['ETag'] = util.md5(k)
+                            keys_updated.update({k:v})
+                            keys_updated[k]['ETag'] = fdict[v['local']]['ETag']
                     except KeyError:
                         ## if key not found locally compute md5, and store local
-                        if keys_updated:
-                            keys_updated.update({k:v})
-                        else:
-                            keys_updated = OrderedDict({k:v})
-                        keys_updated[k]['ETag'] = util.md5(k)
+                        keys_updated.update({k:v})
+                        keys_updated[k]['ETag'] = util.md5(v['local'])
                         
                         ## update local data store
-                        fdict[k] = v
+                        fdict[v['local']] = {'ETag':keys_updated[k]['ETag'], 'mtime':v['mtime']}
+            
             with open(md5_data_path, 'w') as f:
                 json.dump(fdict, f)
           
             return keys_updated
         else:
              sys.stderr.write('no local md5 data found, calculating now ...\n')
+            
+             key_dump = OrderedDict({})
              
              for k,v in keys.items():
-                 keys[k]['ETag'] = util.md5(k)
-             
+                 key_dump.update({v['local']:{'ETag': util.md5(v['local']), 'mtime':v['mtime']}})
+                 keys[k]['ETag'] = key_dump[v['local']]['ETag']
              sys.stderr.write('writing md5 data to ' + md5_data_path + '\n')
 
              with open(md5_data_path, 'w') as f:
-                 json.dump(keys, f)
+                 json.dump(key_dump, f)
 
              return keys
     
@@ -597,7 +591,7 @@ class SmartS3Sync():
                 s3LocalDirAndFileKeys = OrderedDict({k:v})
 
 
-        if self.uselocal:
+        if self.localcache:
             s3LocalDirAndFileKeys = self.check_local_md5_store(s3LocalDirAndFileKeys)
         else:
            for k,v in s3LocalDirAndFileKeys.items():
@@ -690,6 +684,6 @@ if __name__== "__main__":
                         meta_file_mode = options['--meta_file_mode'],
                         uid = options['--uid'],
                         gid = options['--gid'],
-                        uselocal = options['--uselocal'])
+                        localcache = options['--localcache'])
 
     s3_sync.sync()
