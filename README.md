@@ -1,8 +1,8 @@
-# s3syncli docker container
+# s3synccli docker container
 
 ## build container
 
-Following command needs to be run in the same directory as the Dockerfile.
+The following needs to be run in the same directory as the Dockerfile.
 
 ```
     docker build -t compbio-research/s3synccli:0.1 .
@@ -16,7 +16,7 @@ Start a bash shell within the container.
     docker run -it --rm compbio-research/s3synccli:0.1 bash
 ```
 
-## mounting local volumes for s3syncli
+## mounting local volumes for s3synccli
 
 
 ### data
