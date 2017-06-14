@@ -51,6 +51,7 @@ from binascii import unhexlify
 import threading
 import magic 
 import time
+import gzip
 
 class S3SyncUtility():
     
@@ -214,7 +215,7 @@ class SmartS3Sync():
                  meta_file_mode = "33204", uid = None, gid = None,
                  localcache = False,
                  local_cache_path = os.environ.get('HOME') + '/.s3synccli',
-                 local_md5_cache = 'local_md5_store.json',
+                 local_md5_cache = 'local_md5_store.json.gz',
                  logs_fname = 's3synccli.log'):
         
         self.local = local
@@ -315,8 +316,9 @@ class SmartS3Sync():
         if os.path.isfile(md5_data_path):
             fdict = {}
             keys_updated = OrderedDict({})
-            with open(md5_data_path, 'r') as f:
-                fdict = json.loads(f.read())
+            with gzip.open(md5_data_path, 'rb') as f:
+                
+                fdict = json.loads(f.read().decode())
                 
                 for k,v in keys.items():
                     try:
@@ -338,8 +340,10 @@ class SmartS3Sync():
                         ## update local data store
                         fdict[v['local']] = {'ETag':keys_updated[k]['ETag'], 'mtime':v['mtime']}
             
-            with open(md5_data_path, 'w') as f:
-                json.dump(fdict, f)
+            with gzip.open(md5_data_path, 'w') as f:
+                json_str = json.dumps(fdict)
+                json_bytes = json_str.encode('utf-8')
+                f.write(json_bytes)
           
             return keys_updated
         else:
@@ -352,8 +356,10 @@ class SmartS3Sync():
                  keys[k]['ETag'] = key_dump[v['local']]['ETag']
              sys.stderr.write('writing md5 data to ' + md5_data_path + '\n')
 
-             with open(md5_data_path, 'w') as f:
-                 json.dump(key_dump, f)
+             with gzip.open(md5_data_path, 'w') as f:
+                 json_str = json.dumps(key_dump)
+                 json_bytes = json_str.encode('utf-8')
+                 f.write(json_bytes)
 
              return keys
     
