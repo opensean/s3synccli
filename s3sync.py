@@ -130,8 +130,8 @@ class DirectoryWalk():
 
     def __init__(self, local = None, md5sum = False):
         self.local = local
-        self.root = None
-        self.file = None
+        self.root = OrderedDict({})
+        self.file = OrderedDict({})
         self.isdir = True
         self.md5sum = md5sum
         self.walk_dir(local)
@@ -149,16 +149,10 @@ class DirectoryWalk():
         if len(d) == 0 and os.path.isfile(local):
             self.isdir = False
         for a,b,c in d:
-            if not self.root:
-                self.root = OrderedDict({a:s3util.dzip_meta(a)})
-            else:
-                self.root.update({a:s3util.dzip_meta(a)})
+            self.root.update({a:s3util.dzip_meta(a)})
             if c:
                 for f in c:
-                    if not self.file:
-                        self.file = OrderedDict({os.path.join(a, f):s3util.dzip_meta(os.path.join(a, f))})
-                    else:
-                        self.file.update({os.path.join(a, f):s3util.dzip_meta(os.path.join(a, f))})
+                    self.file.update({os.path.join(a, f):s3util.dzip_meta(os.path.join(a, f))})
     
     def toS3Keys(self, keys, s3path, isdir = True):
         """
@@ -293,18 +287,13 @@ class SmartS3Sync():
             e.g. ['home/', 'home/sean.landry/']
 
         """
-        prefixes = None
+        prefixes = OrderedDict({})
         
         temp = path[len(bucket) + 1:]
         while '/' in temp:
             temp = temp.rsplit('/', 1)[0]
             if temp:
-                if not prefixes:
-                    prefixes = OrderedDict({temp + '/': json.loads(metadir)})
-                else:
-                    prefixes.update({temp + '/': json.loads(metadir)})
-
-
+                prefixes.update({temp + '/': json.loads(metadir)})
         return prefixes  
 
     def init_local_data(self, local_cache_path, localcache):
@@ -582,16 +571,14 @@ class SmartS3Sync():
         if s3localdirkeys:
             s3LocalDirAndFileKeys = s3localdirkeys
         else:
-            s3LocalDirAndFileKeys = None
+            s3LocalDirAndFileKeys = OrderedDict({})
         
         for k,v in s3localfilekeys.items():
-            if s3LocalDirAndFileKeys:
-                s3LocalDirAndFileKeys.update({k:v})
-            else:
-                s3LocalDirAndFileKeys = OrderedDict({k:v})
+            s3LocalDirAndFileKeys.update({k:v})
 
 
         if self.localcache:
+            sys.stderr.write('checking local cache...\n')
             s3LocalDirAndFileKeys = self.check_local_md5_store(s3LocalDirAndFileKeys)
         else:
            for k,v in s3LocalDirAndFileKeys.items():
