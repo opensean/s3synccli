@@ -26,7 +26,7 @@ Options:
     --metadata METADATA               metadata in json format e.g. '{"uid":"6812", "gid":"6812"}'
     --meta_dir_mode METADIR           mode to use for directories in metadata if none is found locally [default: 509]
     --meta_file_mode METAFILE         mode to use for files in metadata if none if found locally [default: 33204]
-    --profile PROFILE                 aws profile name [default: default]
+    --profile PROFILE                 aws profile name 
     --uid UID                         user id that will overide any uid information detected for files and directories
     --gid GID                         groud id that will overid any gid information detected for files and directories
     --localcache                      use local data stored in .s3syncli/local_data_store.json.gz to save on md5sum computation.
@@ -211,30 +211,73 @@ class ProgressPercentage(object):
 class SmartS3Sync():
 
     def __init__(self, local = None, s3path = None, metadata = None, 
-                 profile = 'default', meta_dir_mode = "509", 
+                 profile = None, meta_dir_mode = "509", 
                  meta_file_mode = "33204", uid = None, gid = None,
                  localcache = False,
                  local_cache_path = os.environ.get('HOME') + '/.s3synccli',
-                 local_md5_cache = 'local_md5_store.json.gz',
-                 logs_fname = 's3synccli.log'):
+                 local_md5_cache = 'local_md5_store.json.gz'):
         
         self.local = local
         self.s3path = s3path
         self.bucket = s3path.split('/', 1)[0]
         self.walk = DirectoryWalk(local)
-        self.profile = profile
         self.uid = uid
         self.gid = gid
         self.metadir, self.metafile = self.parse_meta(metadata,
                             dirmode = meta_dir_mode, filemode = meta_file_mode, uid = uid, gid = gid)
         self.keys = self.parse_prefix(s3path, self.bucket, self.metadir)
-        self.session = boto3.Session(profile_name = self.profile)
-        self.s3cl = boto3.client('s3')
-        self.s3rc = boto3.resource('s3')
+        self.s3cl = None
+        self.s3rc = None
+        self.session = self.init_boto3session(profile)
         self.localcache = localcache
         self.local_md5_cache = local_md5_cache
         self.local_cache_path = self.init_local_data(local_cache_path, localcache)
-        self.logs_fname = logs_fname
+
+
+    def init_boto3session(self, profile):
+        """
+        Initialize a boto3 session, s3 client, and s3 resource.
+
+        Checks for credentials in the following orderd:
+            1. profile arg, checks for profile in .aws config
+            2. environment variables--> AWS_ACCESS_KEY_ID, 
+               AWS_SECRET_ACCESS_KEY, and AWS_DEFAULT_REGION
+            3. 'default' profile in .aws config
+        
+        Args:
+            profile (str): aws profile name.
+        
+        Returns:
+            session (boto3.Session)
+        """
+        if profile:
+            ## use profile names passed in args, looks for .aws config file
+            session = boto3.Session(profile_name = profile)
+            if session:
+                self.s3cl = boto3.client('s3')
+                self.s3rc = boto3.resource('s3')
+                return session
+        elif os.environ.get('AWS_ACCESS_KEY_ID') and os.environ.get('AWS_SECRET_ACCESS_KEY') and os.environ.get('AWS_DEFAULT_REGION'):
+            ## use environment variables
+            session = boto3.Session(aws_access_key_id = os.environ.get('AWS_ACCESS_KEY_ID'),
+                                     aws_secret_access_key = os.environ.get('AWS_SECRET_ACCESS_KEY'),
+                                     region_name = os.environ.get('AWS_DEFAULT_REGION'))
+            if session:
+                ## only intialize client and resource if valid session is established
+                self.s3cl = boto3.client('s3')
+                self.s3rc = boto3.resource('s3')
+                return session
+
+        ## use 'default' in .aws config file
+        session = boto3.Session() 
+        if session:
+            self.s3cl = boto3.client('s3')
+            self.s3rc = boto3.resource('s3')
+            return session
+        else:
+            sys.stderr.write('Cannot establish aws boto3 session, exiting...\n')
+            sys.exit()
+
 
     def parse_meta(self, meta = None, dirmode = None, filemode = None, uid = None, gid = None):
         """
