@@ -17,7 +17,7 @@ when in doubt:
     - for files use "mode":"33204"
 
 Usage:
-    s3sync <localdir> <s3path> [--metadata METADATA --meta_dir_mode METADIR --meta_file_mode METAFILE --uid UID --gid GID --profile PROFILE --uselocal USELOCAL]
+    s3sync <localdir> <s3path> [--metadata METADATA --meta_dir_mode METADIR --meta_file_mode METAFILE --uid UID --gid GID --profile PROFILE --localcache]
     s3sync -h | --help 
 
 Options: 
@@ -29,7 +29,7 @@ Options:
     --profile PROFILE                 aws profile name [default: default]
     --uid UID                         user id that will overide any uid information detected for files and directories
     --gid GID                         groud id that will overid any gid information detected for files and directories
-    --localcache LOCALCACHE           use local data stored in .s3syncli/local_data_store.json to save on md5sum computation.
+    --localcache                      use local data stored in .s3syncli/local_data_store.json.gz to save on md5sum computation.
     -h --help                         show this screen.
 """ 
 __author__= "Sean Landry"
