@@ -17,7 +17,7 @@ when in doubt:
     - for files use "mode":"33204"
 
 Usage:
-    s3sync <localdir> <s3path> [--metadata METADATA --meta_dir_mode METADIR --meta_file_mode METAFILE --uid UID --gid GID --profile PROFILE --uselocal USELOCAL]
+    s3sync <localdir> <s3path> [--metadata METADATA --meta_dir_mode METADIR --meta_file_mode METAFILE --uid UID --gid GID --profile PROFILE --localcache]
     s3sync -h | --help 
 
 Options: 
@@ -29,7 +29,7 @@ Options:
     --profile PROFILE                 aws profile name [default: default]
     --uid UID                         user id that will overide any uid information detected for files and directories
     --gid GID                         groud id that will overid any gid information detected for files and directories
-    --localcache LOCALCACHE           use local data stored in .s3syncli/local_data_store.json to save on md5sum computation.
+    --localcache                      use local data stored in .s3syncli/local_data_store.json.gz to save on md5sum computation.
     -h --help                         show this screen.
 """ 
 __author__= "Sean Landry"
@@ -349,18 +349,29 @@ class SmartS3Sync():
         else:
              sys.stderr.write('no local md5 data found, calculating now ...\n')
             
-             key_dump = OrderedDict({})
-             
-             for k,v in keys.items():
-                 key_dump.update({v['local']:{'ETag': util.md5(v['local']), 'mtime':v['mtime']}})
-                 keys[k]['ETag'] = key_dump[v['local']]['ETag']
-             sys.stderr.write('writing md5 data to ' + md5_data_path + '\n')
-
+             ## using the below strategy to avoid any itermediate python 
+             ## objects, encase local data store is large
              with gzip.open(md5_data_path, 'w') as f:
-                 json_str = json.dumps(key_dump)
-                 json_bytes = json_str.encode('utf-8')
-                 f.write(json_bytes)
-
+                 
+                 sys.stderr.write('writing md5 data to ' + md5_data_path + '\n')
+                 
+                 f.write(b'{')
+                 
+                 count = 0
+                 total = len(keys) - 1
+                 
+                 for k,v in keys.items():
+                     keys[k]['ETag'] = util.md5(v['local'])
+                     nextLn = '    "' + v['local'] + '": {"mtime": "' + v['mtime'] + '" , "ETag": "' + v['ETag'] + '"}'
+                     f.write(nextLn.encode())
+                     
+                     if count < total:
+                         f.write(b',\n')
+                     
+                     count += 1
+                 
+                 f.write(b'}')
+              
              return keys
     
 
