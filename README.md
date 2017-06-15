@@ -5,7 +5,7 @@
 The following needs to be run in the same directory as the Dockerfile.
 
 ```
-    docker build -t compbio-research/s3synccli:0.1 .
+    docker build -t some_container_repo/s3synccli:0.1 .
 ```
 
 ## running container bash session
@@ -13,7 +13,7 @@ The following needs to be run in the same directory as the Dockerfile.
 Start a bash shell within the container.
 
 ```
-    docker run -it --rm compbio-research/s3synccli:0.1 bash
+    docker run -it --rm some_container_repo/s3synccli:0.1 bash
 ```
 
 ## volumes, .env, UID
