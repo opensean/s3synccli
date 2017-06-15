@@ -214,7 +214,7 @@ class SmartS3Sync():
                  profile = None, meta_dir_mode = "509", 
                  meta_file_mode = "33204", uid = None, gid = None,
                  localcache = False,
-                 local_cache_path = os.environ.get('HOME') + '/.s3synccli',
+                 local_cache_path = os.path.join(os.environ.get('HOME'), '.s3sync'),
                  local_md5_cache = 'local_md5_store.json.gz'):
         
         self.local = local
@@ -343,7 +343,12 @@ class SmartS3Sync():
     def init_local_data(self, local_cache_path, localcache):
     
         if not os.path.exists(local_cache_path) and localcache:
-            os.mkdir(local_cache_path)
+            if os.environ.get('HOME') and os.environ.get('HOME') != '/':
+                os.mkdir(local_cache_path)
+            ## fringe case for docker container
+            else:
+                local_cache_path = local_cache_path.rsplit('/', 1)[1]
+
         
         return local_cache_path
 
