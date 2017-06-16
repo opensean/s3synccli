@@ -66,6 +66,14 @@ directory with and s3 bucket.
 
 ```
 
+Pass an ```--interval x``` (unit is minutes) arg to start autosync mode in which the program will sync every x number of minutes.
+
+```
+    docker run -it --rm --env-file /path/to/env/.env -u 1000  -v /path/to/local/dir/:/s3sync/data -v /path/to/local/cache:/s3sync/.s3sync some_container_repo/s3synccli:0.1 s3bucket/path/to/diri/ --interval 5
+
+```
+
+
 ### Future
 
 - docker compose
@@ -73,5 +81,3 @@ directory with and s3 bucket.
     - easier to run
     - entry command contained within docker-compose.yml
 
-- autosync so container will run sync every specified interval until the
-  container is stopped

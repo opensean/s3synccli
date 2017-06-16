@@ -17,7 +17,7 @@ when in doubt:
     - for files use "mode":"33204"
 
 Usage:
-    s3sync <localdir> <s3path> [--metadata METADATA --meta_dir_mode METADIR --meta_file_mode METAFILE --uid UID --gid GID --profile PROFILE --localcache --localcache_dir CACHEDIR]
+    s3sync <localdir> <s3path> [--metadata METADATA --meta_dir_mode METADIR --meta_file_mode METAFILE --uid UID --gid GID --profile PROFILE --localcache --localcache_dir CACHEDIRi --interval INTERVAL]
     s3sync -h | --help 
 
 Options: 
@@ -31,6 +31,7 @@ Options:
     --gid GID                         groud id that will overid any gid information detected for files and directories
     --localcache                      use local data stored in .s3sync/s3sync_md5_cache.json.gz to save on md5sum computation.
     --localcache_dir CACHEDIR         directory in which to store local_md5_cache.json.gz, default: os.path.join(os.environ.get('HOME'), '.s3sync') 
+    --interval INTERVAL               enter any number greater than 0 to start autosync mode, program will sync every interval (min)
     -h --help                         show this screen.
 """ 
 __author__= "Sean Landry"
@@ -715,21 +716,31 @@ class SmartS3Sync():
         else:
             sys.stderr.write('S3 bucket is up to date\n')
 
-    def sync(self):
+    def sync(self, interval = None):
         """
         Complete a sync between a local directory or file and an s3 bucket.  
 
         """
-        
-        if os.path.isfile(self.local):
-            self.sync_file()
+        autosync = True
+        while autosync: 
+            if os.path.isfile(self.local):
+                self.sync_file()
 
-        elif os.path.isdir(self.local):
-            self.sync_dir()
+            elif os.path.isdir(self.local):
+                self.sync_dir()
 
-        else:
-            sys.stderr.write('ERROR --> ' + self.local + 
+            else:
+                sys.stderr.write('ERROR --> ' + self.local + 
                              'is not a file or a directory!\n')
+                sys.exit()
+            if not interval:
+                autosync = False
+            else:
+                interval = float(interval)
+                for i in range(int(interval * 60), 0, -1):
+                    sys.stderr.write('next sync in %d seconds\r' % i)
+                    sys.stderr.flush()
+                    time.sleep(1)
 
 
 if __name__== "__main__":
@@ -750,4 +761,4 @@ if __name__== "__main__":
                         localcache = options['--localcache'],
                         localcache_dir = options['--localcache_dir'])
 
-    s3_sync.sync()
+    s3_sync.sync(interval = options['--interval'])
