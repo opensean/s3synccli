@@ -86,7 +86,7 @@ If running the container **WITH** a UID the local .aws directory should be
 mounted here, ```-v /path/to/local/.aws:/.aws```
 
 If running the container **WITHOUT** a UID the local .aws directory should be 
-mounted here, ```-v /path/to/local/.aws:/root/.aws
+mounted here, ```-v /path/to/local/.aws:/root/.aws```
 
 
 #### using environment variables
@@ -113,14 +113,9 @@ Put everything together and run the container as an exectuble.  For example,
     $ docker run -it --rm --env-file /path/to/env/.env -u 1000 \
                  -v /path/to/local/dir/:/s3sync/data \
                  -v /path/to/local/cache:/s3sync/.s3sync \
-                some_container_repo/s3synccli:0.1 \
-                s3bucket/path/to/dir/
+                 some_container_repo/s3synccli:0.1 \
+                 s3bucket/path/to/dir/
 
-```
-
-```
-    $ docker run -it --rm --env-file /path/to/env/.env -u 1000 \
-               -v /path/to/local/dir/:/s3sync/data -v /path/to/local/cache:/s3sync/.s3sync some_container_repo/s3synccli:0.1 bash
 ```
 
 Pass an ```--interval x``` (unit is minutes) arg to start autosync mode in
@@ -130,18 +125,17 @@ mode.
 
 ```
     $ docker run -it --rm --env-file /path/to/env/.env -u 1000 \
-               -v /path/to/local/dir/:/s3sync/data \
-               -v /path/to/local/cache:/s3sync/.s3sync \
-               some_container_repo/s3synccli:0.1 \
-               s3bucket/path/to/dir/ --interval 5
+                 -v /path/to/local/dir/:/s3sync/data \
+                 -v /path/to/local/cache:/s3sync/.s3sync \
+                 some_container_repo/s3synccli:0.1 \
+                 s3bucket/path/to/dir/ --interval 5
 
 ```
 
 ### start bash shell in the container
 
-If one every wants to start a shell within the container to experiment with 
-python program or code directly the container entrypoint can be overidden.  
-For example,
+A shell can be started in the container to experiment with python program or 
+code directly by overiding the container entrypoint.  For example,
 
 ```
    $ docker run -it --rm --entrypoint bash --env-file /path/to/env/.env \ 
@@ -152,7 +146,6 @@ For example,
                s3bucket/path/to/dir/ 
 
 ```
-### Execute sync to s3 bucket
 
 Once the shell session is active one can run the python code directly.
 
@@ -165,5 +158,5 @@ Once the shell session is active one can run the python code directly.
 - docker compose
     - use a fleet of containers to sync multiple directories
     - easier to run
-    - entry command contained within docker-compose.yml
+    - all args contained within docker-compose.yml
 
