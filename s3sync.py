@@ -17,7 +17,7 @@ when in doubt:
     - for files use "mode":"33204"
 
 Usage:
-    s3sync <localdir> <s3path> [--metadata METADATA --meta_dir_mode METADIR --meta_file_mode METAFILE --uid UID --gid GID --profile PROFILE --localcache]
+    s3sync <localdir> <s3path> [--metadata METADATA --meta_dir_mode METADIR --meta_file_mode METAFILE --uid UID --gid GID --profile PROFILE --localcache --localcache_dir CACHEDIR]
     s3sync -h | --help 
 
 Options: 
@@ -29,7 +29,8 @@ Options:
     --profile PROFILE                 aws profile name 
     --uid UID                         user id that will overide any uid information detected for files and directories
     --gid GID                         groud id that will overid any gid information detected for files and directories
-    --localcache                      use local data stored in .s3syncli/local_data_store.json.gz to save on md5sum computation.
+    --localcache                      use local data stored in .s3sync/s3sync_md5_cache.json.gz to save on md5sum computation.
+    --localcache_dir CACHEDIR         directory in which to store local_md5_cache.json.gz, default: os.path.join(os.environ.get('HOME'), '.s3sync') 
     -h --help                         show this screen.
 """ 
 __author__= "Sean Landry"
@@ -166,21 +167,18 @@ class DirectoryWalk():
 
         """
         try:
-            s3 = None
+        
+            s3 = OrderedDict({})
             for k,v in keys.items():
                 if isdir:
-                    if s3 == None:
-                        ## omit first 
-                        if os.path.join(s3path.split('/', 1)[1], k[len(self.local) + 1:] + '/') != '/':
-                            s3 = OrderedDict({os.path.join(s3path.split('/', 1)[1], k[len(self.local) + 1:] + '/'):v})
-                    else:
+                    ## omit first 
+                    if os.path.join(s3path.split('/', 1)[1], k[len(self.local) + 1:] + '/') != '/':
                         s3.update({os.path.join(s3path.split('/', 1)[1], k[len(self.local) + 1:] + '/'):v})
                 else:
-                    if s3 == None:
-                        s3 = OrderedDict({os.path.join(s3path.split('/', 1)[1], k[len(self.local) + 1:]):v})
-                    else:
-                        s3.update({os.path.join(s3path.split('/', 1)[1], k[len(self.local) + 1:]):v})
+                    s3.update({os.path.join(s3path.split('/', 1)[1], k[len(self.local) + 1:]):v})
+            
             return s3
+        
         except AttributeError as e:
             sys.stderr.write(str(e) + '\n')
 
@@ -214,8 +212,8 @@ class SmartS3Sync():
                  profile = None, meta_dir_mode = "509", 
                  meta_file_mode = "33204", uid = None, gid = None,
                  localcache = False,
-                 local_cache_path = os.path.join(os.environ.get('HOME'), '.s3sync'),
-                 local_md5_cache = 'local_md5_store.json.gz'):
+                 localcache_dir = None,
+                 localcache_fname = 's3sync_md5_cache.json.gz'):
         
         self.local = local
         self.s3path = s3path
@@ -230,8 +228,8 @@ class SmartS3Sync():
         self.s3rc = None
         self.session = self.init_boto3session(profile)
         self.localcache = localcache
-        self.local_md5_cache = local_md5_cache
-        self.local_cache_path = self.init_local_data(local_cache_path, localcache)
+        self.localcache_fname = localcache_fname
+        self.localcache_dir = self.init_localcache(localcache_dir, localcache)
 
 
     def init_boto3session(self, profile):
@@ -278,6 +276,120 @@ class SmartS3Sync():
             sys.stderr.write('Cannot establish aws boto3 session, exiting...\n')
             sys.exit()
 
+    def init_localcache(self, localcache_dir, localcache):
+        """
+        
+        """
+        if localcache and not localcache_dir or localcache and not os.path.exists(localcache_dir):
+            
+            localcache_dir = os.path.join(os.environ.get('HOME'), '.s3sync/')
+            sys.stderr.write('local cache directory not found using '
+                             + 'default --> ' + localcache_dir + '\n')
+            
+            try:
+                sys.stderr.write('creating ' + localcache_dir + '\n')
+                os.mkdir(localcache_dir)
+            except FileExistsError:
+                sys.stderr.write(localcache_dir + ' already exists, skipping...\n')
+
+        return localcache_dir
+
+    
+    def check_localcache(self, keys):
+        """
+
+        """
+        if not os.path.exists(self.localcache_dir):
+            os.mkdir(self.localcache_dir)
+        
+        md5_data = os.path.join(self.localcache_dir, self.localcache_fname)  
+        
+        util = S3SyncUtility()
+
+        if os.path.isfile(md5_data):
+            fdict = {}
+            keys_updated = OrderedDict({})
+            with gzip.open(md5_data, 'rb') as f:
+                
+                fdict = json.loads(f.read().decode())
+                
+                for k,v in keys.items():
+                    try:
+                        ## check last modified, if different compute md5
+                        if fdict[v['local']]['mtime'] != v['mtime']:
+                            keys_updated.update({k:v})
+                            
+                            keys_updated[k]['ETag'] = util.md5(k)
+                            fdict[v['local']] = {'ETag':keys_updated[k]['ETag'], 'mtime':v['mtime']}
+                        else:
+                            ## if same last modified, use stored md5 tag
+                            keys_updated.update({k:v})
+                            keys_updated[k]['ETag'] = fdict[v['local']]['ETag']
+                    except KeyError:
+                        ## if key not found locally compute md5, and store local
+                        keys_updated.update({k:v})
+                        keys_updated[k]['ETag'] = util.md5(v['local'])
+                        
+                        ## update local data store
+                        fdict[v['local']] = {'ETag':keys_updated[k]['ETag'], 'mtime':v['mtime']}
+            
+            with gzip.open(md5_data, 'w') as f:
+                json_str = json.dumps(fdict)
+                json_bytes = json_str.encode('utf-8')
+                f.write(json_bytes)
+          
+            return keys_updated
+        else:
+             sys.stderr.write('no local md5 data found, calculating now ...\n')
+            
+             ## using the below strategy to avoid any itermediate python 
+             ## objects, encase local data store is large
+             with gzip.open(md5_data, 'w') as f:
+                 
+                 sys.stderr.write('writing md5 data to ' + md5_data + '\n')
+                 
+                 f.write(b'{')
+                 
+                 count = 0
+                 total = len(keys) - 1
+                 
+                 for k,v in keys.items():
+                     keys[k]['ETag'] = util.md5(v['local'])
+                     nextLn = '    "' + v['local'] + '": {"mtime": "' + v['mtime'] + '" , "ETag": "' + v['ETag'] + '"}'
+                     f.write(nextLn.encode())
+                     
+                     if count < total:
+                         f.write(b',\n')
+                     
+                     count += 1
+                 
+                 f.write(b'}')
+              
+             return keys
+     
+     
+    def parse_prefix(self, path = None, bucket = None, metadir = None):
+        """
+        Parse an s3 prefix key path.
+
+        Args:
+            path (str): entire s3 path.
+
+        Returns:
+            prefixes (lst): list of prefixes
+            e.g. ['home/', 'home/sean.landry/']
+
+        """
+        prefixes = OrderedDict({})
+        
+        temp = path[len(bucket) + 1:]
+        while '/' in temp:
+            temp = temp.rsplit('/', 1)[0]
+            if temp:
+                prefixes.update({temp + '/': json.loads(metadir)})
+        return prefixes  
+
+
 
     def parse_meta(self, meta = None, dirmode = None, filemode = None, uid = None, gid = None):
         """
@@ -319,109 +431,7 @@ class SmartS3Sync():
         metafilejs = json.dumps(metafile)
         return metadirjs, metafilejs
 
-    def parse_prefix(self, path = None, bucket = None, metadir = None):
-        """
-        Parse an s3 prefix key path.
-
-        Args:
-            path (str): entire s3 path.
-
-        Returns:
-            prefixes (lst): list of prefixes
-            e.g. ['home/', 'home/sean.landry/']
-
-        """
-        prefixes = OrderedDict({})
-        
-        temp = path[len(bucket) + 1:]
-        while '/' in temp:
-            temp = temp.rsplit('/', 1)[0]
-            if temp:
-                prefixes.update({temp + '/': json.loads(metadir)})
-        return prefixes  
-
-    def init_local_data(self, local_cache_path, localcache):
-    
-        if not os.path.exists(local_cache_path) and localcache:
-            if os.environ.get('HOME') and os.environ.get('HOME') != '/':
-                os.mkdir(local_cache_path)
-            ## fringe case for docker container
-            else:
-                local_cache_path = local_cache_path.rsplit('/', 1)[1]
-
-        
-        return local_cache_path
-
-    def check_local_md5_store(self, keys):
-
-        if not os.path.exists(self.local_cache_path):
-            os.mkdir(self.local_cache_path)
-        
-        md5_data_path = os.path.join(self.local_cache_path, self.local_md5_cache)  
-        
-        util = S3SyncUtility()
-
-        if os.path.isfile(md5_data_path):
-            fdict = {}
-            keys_updated = OrderedDict({})
-            with gzip.open(md5_data_path, 'rb') as f:
-                
-                fdict = json.loads(f.read().decode())
-                
-                for k,v in keys.items():
-                    try:
-                        ## check last modified, if different compute md5
-                        if fdict[v['local']]['mtime'] != v['mtime']:
-                            keys_updated.update({k:v})
-                            
-                            keys_updated[k]['ETag'] = util.md5(k)
-                            fdict[v['local']] = {'ETag':keys_updated[k]['ETag'], 'mtime':v['mtime']}
-                        else:
-                            ## if same last modified, use stored md5 tag
-                            keys_updated.update({k:v})
-                            keys_updated[k]['ETag'] = fdict[v['local']]['ETag']
-                    except KeyError:
-                        ## if key not found locally compute md5, and store local
-                        keys_updated.update({k:v})
-                        keys_updated[k]['ETag'] = util.md5(v['local'])
-                        
-                        ## update local data store
-                        fdict[v['local']] = {'ETag':keys_updated[k]['ETag'], 'mtime':v['mtime']}
-            
-            with gzip.open(md5_data_path, 'w') as f:
-                json_str = json.dumps(fdict)
-                json_bytes = json_str.encode('utf-8')
-                f.write(json_bytes)
-          
-            return keys_updated
-        else:
-             sys.stderr.write('no local md5 data found, calculating now ...\n')
-            
-             ## using the below strategy to avoid any itermediate python 
-             ## objects, encase local data store is large
-             with gzip.open(md5_data_path, 'w') as f:
-                 
-                 sys.stderr.write('writing md5 data to ' + md5_data_path + '\n')
-                 
-                 f.write(b'{')
-                 
-                 count = 0
-                 total = len(keys) - 1
-                 
-                 for k,v in keys.items():
-                     keys[k]['ETag'] = util.md5(v['local'])
-                     nextLn = '    "' + v['local'] + '": {"mtime": "' + v['mtime'] + '" , "ETag": "' + v['ETag'] + '"}'
-                     f.write(nextLn.encode())
-                     
-                     if count < total:
-                         f.write(b',\n')
-                     
-                     count += 1
-                 
-                 f.write(b'}')
-              
-             return keys
-    
+   
 
     def meta_update(self, key = None, metadata = None):
         """
@@ -644,7 +654,7 @@ class SmartS3Sync():
 
         if self.localcache:
             sys.stderr.write('checking local cache...\n')
-            s3LocalDirAndFileKeys = self.check_local_md5_store(s3LocalDirAndFileKeys)
+            s3LocalDirAndFileKeys = self.check_localcache(s3LocalDirAndFileKeys)
         else:
            for k,v in s3LocalDirAndFileKeys.items():
                s3LocalDirAndFileKeys[k]['ETag'] = utility.md5(s3LocalDirAndFileKeys[k]['local'])
@@ -720,7 +730,8 @@ class SmartS3Sync():
         else:
             sys.stderr.write('ERROR --> ' + self.local + 
                              'is not a file or a directory!\n')
-           
+
+
 if __name__== "__main__":
     """
     Command line arguments.
@@ -736,6 +747,7 @@ if __name__== "__main__":
                         meta_file_mode = options['--meta_file_mode'],
                         uid = options['--uid'],
                         gid = options['--gid'],
-                        localcache = options['--localcache'])
+                        localcache = options['--localcache'],
+                        localcache_dir = options['--localcache_dir'])
 
     s3_sync.sync()
