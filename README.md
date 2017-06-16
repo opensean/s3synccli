@@ -57,41 +57,41 @@ or build the container from source.
 
 ```/s3sync/data```
 
-The local directory to be synce to the s3 bucket should be mounted to the
- ```/s3sync/data``` container directory
+The local directory to be synced to the s3 bucket should be mounted to the
+ ```/s3sync/data``` directory of the container using the ```-v``` docker run 
+arg.  For example, ```-v /path/to/local/data:/s3sync/data```.
 
 ```/s3sync/.s3ync```
 
+A local directory to store the md5 cache should be mounted to the 
+```/s3sync/.s3sync``` directory of the container usin the ```-v``` docker run 
+arg.  For example, ```-v /path/to/local/cache:/s3sync/.s3sync```.
+
+*Note: The container will need the proper permissions to read from the 
+directory mounted to ```/s3sync/data``` and read/write permissions for the 
+directory mounted to ```/s3sync/.s3sync```.  For instance, the container will 
+encounter permission errors when trying to read from an NFS due to root 
+squashing.  To avoid permission errors run the container with a UID using the 
+```-u``` docker run arg.  For example, ```-u 1000```.
+
+### AWS credentials
+
+AWS credentials can be shared with the container by mounting an .aws folder 
+that contains the standard 'config' and 'credentials' files that are created 
+when configuring the awscli or using envrironment variables via a .env file.
+
+#### mounting .aws
+
+If running the container **WITH** a UID the local .aws directory should be 
+mounted here, ```-v /path/to/local/.aws:/.aws```
+
+If running the container **WITHOUT** a UID the local .aws directory should be 
+mounted here, ```-v /path/to/local/.aws:/root/.aws
 
 
-The s3sync program will sync data from '/s3sync/data' and cache any md5 data
-to '/s3sync/.s3sync'.
+#### using environment variables
 
-Mount the local directory to be synced to the '/s3sync/data' directory of the
-container and mount a local directory to the '/s3sync/.s3sync' directory of the
-container to store the md5 cache.
-
-### explore the container bash session
-
-Start a bash shell within the container by overiding the entrypoint.
-
-```
-    docker run -it --rm --entrypoint bash some_container_repo/s3synccli:latest
-```
-
-## AWS Credentials
-##  .env
-
-*Important container directories*
-
-The s3sync program will sync data from '/s3sync/data' and cache any md5 data
-to '/s3sync/.s3sync'.
-
-Mount the local directory to be synced to the '/s3sync/data' directory of the
-container and mount a local directory to the '/s3sync/.s3sync' directory of the 
-container to store the md5 cache.
-
-AWS credentials can be passed to the container as environment variables using a 
+AWS credentials can be passed to the container as environment variables using a
 .env file with the following format:
 
 ```
@@ -100,45 +100,65 @@ AWS credentials can be passed to the container as environment variables using a
     AWS_DEFAULT_REGION=defaultregion(e.g. us-east-1)
 ```
 
-The .env file uses the convention VAR=varvalue.
+The .env file uses the convention VAR=varvalue.  The .env file can be passed 
+to the container at run time using the ```--env-file``` docker run arg.  
+For example, ```--env-file /path/to/.env```
 
-### UID
 
-The container should be passed a UID using the '-u' arg to ensure it has proper
-permission to read from the mounted data directory and write to the mounted 
-md5 cache directory.
+### run container as an executable
 
-### running the container with mounted volumes, .env, and UID
-
-Example
+Put everything together and run the container as an exectuble.  For example,
 
 ```
-    docker run -it --rm --env-file /path/to/env/.env -u 1000  -v /path/to/local/dir/:/s3sync/data -v /path/to/local/cache:/s3sync/.s3sync some_container_repo/s3synccli:0.1 bash
+    $ docker run -it --rm --env-file /path/to/env/.env -u 1000 \
+                 -v /path/to/local/dir/:/s3sync/data \
+                 -v /path/to/local/cache:/s3sync/.s3sync \
+                some_container_repo/s3synccli:0.1 \
+                s3bucket/path/to/dir/
+
 ```
 
+```
+    $ docker run -it --rm --env-file /path/to/env/.env -u 1000 \
+               -v /path/to/local/dir/:/s3sync/data -v /path/to/local/cache:/s3sync/.s3sync some_container_repo/s3synccli:0.1 bash
+```
+
+Pass an ```--interval x``` (unit is minutes) arg to start autosync mode in
+which the program will sync every x number of minutes as long as the container
+is running.  Use the ```-d``` docker run arg to run the container in detached
+mode.
+
+```
+    $ docker run -it --rm --env-file /path/to/env/.env -u 1000 \
+               -v /path/to/local/dir/:/s3sync/data \
+               -v /path/to/local/cache:/s3sync/.s3sync \
+               some_container_repo/s3synccli:0.1 \
+               s3bucket/path/to/dir/ --interval 5
+
+```
+
+### start bash shell in the container
+
+If one every wants to start a shell within the container to experiment with 
+python program or code directly the container entrypoint can be overidden.  
+For example,
+
+```
+   $ docker run -it --rm --entrypoint bash --env-file /path/to/env/.env \ 
+               -u 1000 \
+               -v /path/to/local/dir/:/s3sync/data \
+               -v /path/to/local/cache:/s3sync/.s3sync \
+               some_container_repo/s3synccli:0.1 \
+               s3bucket/path/to/dir/ 
+
+```
 ### Execute sync to s3 bucket
 
-Once the shell session is active the following can be run to sync the local 
-directory with and s3 bucket.
+Once the shell session is active one can run the python code directly.
 
 ```
-   python3 s3sync.py data s3bucket/path/to/dir/ --localcache --localcache_dir .s3sync 
+   $ python3 s3sync.py data s3bucket/path/to/dir/ --localcache --localcache_dir .s3sync 
 ```
-
-### running the container as an executable
-
-```
-    docker run -it --rm --env-file /path/to/env/.env -u 1000  -v /path/to/local/dir/:/s3sync/data -v /path/to/local/cache:/s3sync/.s3sync some_container_repo/s3synccli:0.1 s3bucket/path/to/dir/
-
-```
-
-Pass an ```--interval x``` (unit is minutes) arg to start autosync mode in which the program will sync every x number of minutes.
-
-```
-    docker run -it --rm --env-file /path/to/env/.env -u 1000  -v /path/to/local/dir/:/s3sync/data -v /path/to/local/cache:/s3sync/.s3sync some_container_repo/s3synccli:0.1 s3bucket/path/to/diri/ --interval 5
-
-```
-
 
 ### Future
 
