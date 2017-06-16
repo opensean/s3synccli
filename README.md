@@ -67,7 +67,7 @@ A local directory to store the md5 cache should be mounted to the
 ```/s3sync/.s3sync``` directory of the container usin the ```-v``` docker run 
 arg.  For example, ```-v /path/to/local/cache:/s3sync/.s3sync```.
 
-*Note: The container will need the proper permissions to read from the 
+**Note:** The container will need the proper permissions to read from the 
 directory mounted to ```/s3sync/data``` and read/write permissions for the 
 directory mounted to ```/s3sync/.s3sync```.  For instance, the container will 
 encounter permission errors when trying to read from an NFS due to root 
@@ -78,7 +78,8 @@ squashing.  To avoid permission errors run the container with a UID using the
 
 AWS credentials can be shared with the container by mounting an .aws folder 
 that contains the standard 'config' and 'credentials' files that are created 
-when configuring the awscli or using envrironment variables via a .env file.
+when configuring the awscli.  One can also use envrironment variables via a 
+.env file.
 
 #### mounting .aws
 
@@ -134,7 +135,7 @@ mode.
 
 ### start bash shell in the container
 
-A shell can be started in the container to experiment with python program or 
+A shell can be started in the container to experiment with the python program or 
 code directly by overiding the container entrypoint.  For example,
 
 ```
