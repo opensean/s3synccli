@@ -1,22 +1,86 @@
-# s3synccli docker container
+# s3synccli
 
-## build container
+## using s3synccli
 
-The following needs to be run in the same directory as the Dockerfile.
-
-```
-    docker build -t some_container_repo/s3synccli:0.1 .
-```
-
-## running container bash session
-
-Start a bash shell within the container.
+### run from source
 
 ```
-    docker run -it --rm some_container_repo/s3synccli:0.1 bash
+    $ git clone https://github.com/opensean/s3synccli.git
+    $ cd s3synccli
+    $ python3 s3sync.py -h
+    Sync local data with S3 while maintaining metadata.  Maintaining metadata is 
+    crucial for working with S3 as a mounted file system via s3fs. 
+    
+    
+    Metadata notes
+    --------------
+    when in doubt:
+    
+        - for directories use "mode":"509"
+        - for files use "mode":"33204"
+    
+    Usage:
+        s3sync <localdir> <s3path> [--metadata METADATA --meta_dir_mode METADIR --meta_file_mode METAFILE --uid UID --gid GID --profile PROFILE --localcache --localcache_dir CACHEDIR --interval INTERVAL]
+        s3sync -h | --help 
+    
+    Options: 
+        <localdir>                        local directory file path
+        <s3path>                          s3 key, e.g. cst-compbio-research-00-buc/
+        --metadata METADATA               metadata in json format e.g. '{"uid":"6812", "gid":"6812"}'
+        --meta_dir_mode METADIR           mode to use for directories in metadata if none is found locally [default: 509]
+        --meta_file_mode METAFILE         mode to use for files in metadata if none if found locally [default: 33204]
+        --profile PROFILE                 aws profile name 
+        --uid UID                         user id that will overide any uid information detected for files and directories
+        --gid GID                         group id that will overid any gid information detected for files and directories
+        --localcache                      use local data stored in .s3sync/s3sync_md5_cache.json.gz to save on md5sum computation.
+        --localcache_dir CACHEDIR         directory in which to store local_md5_cache.json.gz, default: os.path.join(os.environ.get('HOME'), '.s3sync') 
+        --interval INTERVAL               enter any number greater than 0 to start autosync mode, program will sync every interval (min)
+        -h --help                         show this screen.
 ```
 
-## volumes, .env, UID
+### grab the container
+
+```
+    $ docker pull opensean/s3synccli:latest
+```
+or build the container from source.
+
+```
+    $ git clone https://github.com/opensean/s3synccli.git
+    $ cd s3synccli
+    $ docker build -t some_container_repo/s3synccli:lastest .
+```
+
+### container structure
+
+*Important container directories*
+
+```/s3sync/data```
+
+The local directory to be synce to the s3 bucket should be mounted to the
+ ```/s3sync/data``` container directory
+
+```/s3sync/.s3ync```
+
+
+
+The s3sync program will sync data from '/s3sync/data' and cache any md5 data
+to '/s3sync/.s3sync'.
+
+Mount the local directory to be synced to the '/s3sync/data' directory of the
+container and mount a local directory to the '/s3sync/.s3sync' directory of the
+container to store the md5 cache.
+
+### explore the container bash session
+
+Start a bash shell within the container by overiding the entrypoint.
+
+```
+    docker run -it --rm --entrypoint bash some_container_repo/s3synccli:latest
+```
+
+## AWS Credentials
+##  .env
 
 *Important container directories*
 
@@ -37,6 +101,8 @@ AWS credentials can be passed to the container as environment variables using a
 ```
 
 The .env file uses the convention VAR=varvalue.
+
+### UID
 
 The container should be passed a UID using the '-u' arg to ensure it has proper
 permission to read from the mounted data directory and write to the mounted 

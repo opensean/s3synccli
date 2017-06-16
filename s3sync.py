@@ -5,8 +5,8 @@
 ##              and SmartS3Sync() classes.
 
 """
-Sync local data with S3 maintaining metadata.  Maintaining metadata is crucial
-for working with S3 as a mounted file system via s3fs. 
+Sync local data with S3 while maintaining metadata.  Maintaining metadata is 
+crucial for working with S3 as a mounted file system via s3fs. 
 
 
 Metadata notes
@@ -17,7 +17,7 @@ when in doubt:
     - for files use "mode":"33204"
 
 Usage:
-    s3sync <localdir> <s3path> [--metadata METADATA --meta_dir_mode METADIR --meta_file_mode METAFILE --uid UID --gid GID --profile PROFILE --localcache --localcache_dir CACHEDIRi --interval INTERVAL]
+    s3sync <localdir> <s3path> [--metadata METADATA --meta_dir_mode METADIR --meta_file_mode METAFILE --uid UID --gid GID --profile PROFILE --localcache --localcache_dir CACHEDIR --interval INTERVAL]
     s3sync -h | --help 
 
 Options: 
