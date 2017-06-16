@@ -73,5 +73,5 @@ directory with and s3 bucket.
     - easier to run
     - entry command contained within docker-compose.yml
 
-- autosync so container will run syncing every specified interval until the
+- autosync so container will run sync every specified interval until the
   container is stopped
