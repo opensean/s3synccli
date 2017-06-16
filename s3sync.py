@@ -28,16 +28,16 @@ Options:
     --meta_file_mode METAFILE         mode to use for files in metadata if none if found locally [default: 33204]
     --profile PROFILE                 aws profile name 
     --uid UID                         user id that will overide any uid information detected for files and directories
-    --gid GID                         groud id that will overid any gid information detected for files and directories
+    --gid GID                         group id that will overid any gid information detected for files and directories
     --localcache                      use local data stored in .s3sync/s3sync_md5_cache.json.gz to save on md5sum computation.
     --localcache_dir CACHEDIR         directory in which to store local_md5_cache.json.gz, default: os.path.join(os.environ.get('HOME'), '.s3sync') 
     --interval INTERVAL               enter any number greater than 0 to start autosync mode, program will sync every interval (min)
     -h --help                         show this screen.
 """ 
 __author__= "Sean Landry"
-__email__= "sean.d.landry@gmail.com"
-__data__= "09june2017"
-__version__= "0.1"
+__email__= "sean.d.landry@gmail.com, sean.landry@celllsignal.com"
+__data__= "16june2017"
+__version__= "0.1.0"
 
 from docopt import docopt
 import subprocess
