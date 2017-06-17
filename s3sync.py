@@ -17,22 +17,43 @@ when in doubt:
     - for files use "mode":"33204"
 
 Usage:
-    s3sync <localdir> <s3path> [--metadata METADATA --meta_dir_mode METADIR --meta_file_mode METAFILE --uid UID --gid GID --profile PROFILE --localcache --localcache_dir CACHEDIR --interval INTERVAL]
+    s3sync <localdir> <s3path> [--metadata METADATA] [--meta_dir_mode METADIR]
+                               [--meta_file_mode METAFILE] [--uid UID] 
+                               [--gid GID] [--profile PROFILE] [--localcache] 
+                               [--localcache_dir CACHEDIR] [--interval INTERVAL] 
+                               [--log LOGLEVEL]
     s3sync -h | --help 
 
 Options: 
-    <localdir>                        local directory file path
-    <s3path>                          s3 key, e.g. cst-compbio-research-00-buc/
-    --metadata METADATA               metadata in json format e.g. '{"uid":"6812", "gid":"6812"}'
-    --meta_dir_mode METADIR           mode to use for directories in metadata if none is found locally [default: 509]
-    --meta_file_mode METAFILE         mode to use for files in metadata if none if found locally [default: 33204]
-    --profile PROFILE                 aws profile name 
-    --uid UID                         user id that will overide any uid information detected for files and directories
-    --gid GID                         group id that will overid any gid information detected for files and directories
-    --localcache                      use local data stored in .s3sync/s3sync_md5_cache.json.gz to save on md5sum computation.
-    --localcache_dir CACHEDIR         directory in which to store local_md5_cache.json.gz, default: os.path.join(os.environ.get('HOME'), '.s3sync') 
-    --interval INTERVAL               enter any number greater than 0 to start autosync mode, program will sync every interval (min)
-    -h --help                         show this screen.
+    <localdir>                   local directory file path
+    
+    <s3path>                     s3 key, e.g. cst-compbio-research-00-buc/
+    
+    --metadata METADATA          metadata in json format 
+                                 e.g. '{"uid":"6812", "gid":"6812"}'
+    
+    --meta_dir_mode METADIR      mode to use for directories in metadata if 
+                                 none is found locally [default: 509]
+    
+    --meta_file_mode METAFILE    mode to use for files in metadata if none if 
+                                 found locally [default: 33204]
+    
+    --profile PROFILE            aws profile name 
+    
+    --uid UID                    user id that will overide any uid information 
+                                 detected for files and directories
+    
+    --gid GID                    group id that will overid any gid information detected for files and directories
+    
+    --localcache                 use local data stored in .s3sync/s3sync_md5_cache.json.gz to save on md5sum computation.
+    
+    --localcache_dir CACHEDIR    directory in which to store local_md5_cache.json.gz, default: os.path.join(os.environ.get('HOME'), '.s3sync') 
+    
+    --interval INTERVAL          enter any number greater than 0 to start autosync mode, program will sync every interval (min)
+    
+    --log LOGLEVEL               set the log level (threshold), available options include DEBUG, INFO, WARNING, ERROR, CRITICAL [default: DEBUG]
+    
+    -h --help                    show this screen.
 """ 
 __author__= "Sean Landry"
 __email__= "sean.d.landry@gmail.com, sean.landry@celllsignal.com"
@@ -54,6 +75,7 @@ import threading
 import magic 
 import time
 import gzip
+import logging
 
 class S3SyncUtility():
     
@@ -743,13 +765,26 @@ class SmartS3Sync():
                     time.sleep(1)
 
 
-if __name__== "__main__":
+def main():
     """
     Command line arguments.
-    """  
+    """
 
     options = docopt(__doc__)
+    
+    ## setup logger
+    # command line argument. Convert to upper case to allow the user to
+    # specify --log=DEBUG or --log=debug
+    numeric_level = getattr(logging, options['--log'].upper(), None)
+    
+    if not isinstance(numeric_level, int):
+        raise ValueError('Invalid log level: %s' % loglevel)
 
+    dateTag = datetime.now().strftime("%Y-%b-%d_%H-%M-%S")
+
+    logging.basicConfig(filename="s3sync_%s.log" % dateTag, level=numeric_level)
+    
+    
     s3_sync = SmartS3Sync(local = options['<localdir>'], 
                         s3path = options['<s3path>'], 
                         metadata = options['--metadata'], 
@@ -762,3 +797,8 @@ if __name__== "__main__":
                         localcache_dir = options['--localcache_dir'])
 
     s3_sync.sync(interval = options['--interval'])
+
+if __name__== "__main__":
+    main()
+    
+
