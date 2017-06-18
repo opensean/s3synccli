@@ -21,7 +21,7 @@ Usage:
                                [--meta_file_mode METAFILE] [--uid UID] 
                                [--gid GID] [--profile PROFILE] [--localcache] 
                                [--localcache_dir CACHEDIR] [--interval INTERVAL] 
-                               [(--log LOGLEVEL --log_dir LOGDIR)]
+                               [--log LOGLEVEL] [--log_dir LOGDIR]
     s3sync -h | --help 
 
 Options: 
@@ -57,14 +57,13 @@ Options:
                                  autosync mode, program will sync every 
                                  interval (min)
     
-    --log LOGLEVEL               set the log level (threshold), available 
+    --log LOGLEVEL               set the logger level (threshold), available 
                                  options include DEBUG, INFO, WARNING, ERROR, 
-                                 or CRITICAL.  No logs will be created if 
-                                 options is ommitted.
+                                 or CRITICAL. [default: DEBUG]
     
     --log_dir LOGDIR             file path to directory in which to store the 
-                                 logs. This option is required if --log is 
-                                 used.
+                                 logs. No log files are created if this option
+                                 is ommited.
     -h --help                    show this screen.
 """ 
 __author__= "Sean Landry"
@@ -798,38 +797,47 @@ def main():
     ## command line args
     options = docopt(__doc__)
     
-    if options['--log']:
-        ## setup s3sync logger
-        # command line argument. Convert to upper case to allow the user to
-        # specify --log=DEBUG or --log=debug
-        numeric_level = getattr(logging, options['--log'].upper(), None)
-        
-        if not isinstance(numeric_level, int):
-            raise ValueError('Invalid log level: %s' % loglevel)
-
-        dateTag = datetime.now().strftime("%Y-%b-%d_%H-%M-%S")
-
-        logging.basicConfig(format='%(asctime)s %(filename)s %(name)s.%(funcName)s() - %(levelname)s:%(message)s', 
-                            datefmt='%Y-%b-%d_%H:%M:%S', 
-                            filename= options['--log_dir'] + "/%s_s3sync.log" % dateTag, 
-                            level = numeric_level)
-
-        module_logger = logging.getLogger('s3sync')
-        
-        module_logger.setLevel(numeric_level)
-       
-        # create console handler
-        console = logging.StreamHandler()
-        console.setLevel(numeric_level)
-
-        # create formatter and add it to the handler
-        formatter = logging.Formatter('%(name)s.%(funcName)s() - %(levelname)s:%(message)s')
-        console.setFormatter(formatter)
-
-    else:
-         logging.basicConfig(format='%(name)s.%(funcName)s() - %(levelname)s:%(message)s',
-                            level = logging.DEBUG)
+    ## setup s3sync logger
+    # command line argument. Convert to upper case to allow the user to
+    # specify --log=DEBUG or --log=debug
+    numeric_level = getattr(logging, options['--log'].upper(), None)
     
+    if not isinstance(numeric_level, int):
+        raise ValueError('Invalid log level: %s' % loglevel)
+
+    dateTag = datetime.now().strftime("%Y-%b-%d_%H-%M-%S")
+    
+    #if options['--log_dir']:
+    #    logging.basicConfig(format='%(asctime)s %(filename)s %(name)s.%(funcName)s() - %(levelname)s:%(message)s', 
+    #                    datefmt='%Y-%b-%d_%H:%M:%S', 
+    #                    filename= options['--log_dir'] + "/%s_s3sync.log" % dateTag, 
+    #                    level = numeric_level)
+    #else:
+    #    logging.basicConfig(format='%(name)s.%(funcName)s() - %(levelname)s:%(message)s',
+    #                        level = numeric_level)
+
+    module_logger = logging.getLogger()
+    module_logger.setLevel(numeric_level)
+   
+    if options['--log_dir']:
+        ## create file handler
+        fh = logging.FileHandler(options['--log_dir'] + "/%s_s3sync.log" % dateTag)
+        fh_formatter = logging.Formatter('%(asctime)s %(filename)s %(name)s.%(funcName)s() - %(levelname)s:%(message)s')
+        fh.setFormatter(fh_formatter)
+
+        module_logger.addHandler(fh)
+
+    
+    # create console handler
+    console = logging.StreamHandler()
+    console.setLevel(numeric_level)
+
+    # create formatter and add it to the handler
+    console_formatter = logging.Formatter('%(name)s.%(funcName)s() - %(levelname)s:%(message)s')
+    console.setFormatter(console_formatter)
+    
+    module_logger.addHandler(console)
+
     s3_sync = SmartS3Sync(local = options['<localdir>'], 
                         s3path = options['<s3path>'], 
                         metadata = options['--metadata'], 
