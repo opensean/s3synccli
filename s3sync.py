@@ -21,7 +21,7 @@ Usage:
                                [--meta_file_mode METAFILE] [--uid UID] 
                                [--gid GID] [--profile PROFILE] [--localcache] 
                                [--localcache_dir CACHEDIR] [--interval INTERVAL] 
-                               [--log LOGLEVEL]
+                               [(--log LOGLEVEL --log_dir LOGDIR)]
     s3sync -h | --help 
 
 Options: 
@@ -40,19 +40,31 @@ Options:
     
     --profile PROFILE            aws profile name 
     
-    --uid UID                    user id that will overide any uid information 
+    --uid UID                    user id that will overide any uid information
                                  detected for files and directories
     
-    --gid GID                    group id that will overid any gid information detected for files and directories
+    --gid GID                    group id that will overid any gid information
+                                 detected for files and directories
     
-    --localcache                 use local data stored in .s3sync/s3sync_md5_cache.json.gz to save on md5sum computation.
+    --localcache                 use local data stored in --localcache_dir to 
+                                 save on md5sum computation.
     
-    --localcache_dir CACHEDIR    directory in which to store local_md5_cache.json.gz, default: os.path.join(os.environ.get('HOME'), '.s3sync') 
+    --localcache_dir CACHEDIR    directory in which to store 
+                                 local_md5_cache.json.gz, default: 
+                                 os.path.join(os.environ.get('HOME'), '.s3sync') 
     
-    --interval INTERVAL          enter any number greater than 0 to start autosync mode, program will sync every interval (min)
+    --interval INTERVAL          enter any number greater than 0 to start 
+                                 autosync mode, program will sync every 
+                                 interval (min)
     
-    --log LOGLEVEL               set the log level (threshold), available options include DEBUG, INFO, WARNING, ERROR, CRITICAL [default: DEBUG]
+    --log LOGLEVEL               set the log level (threshold), available 
+                                 options include DEBUG, INFO, WARNING, ERROR, 
+                                 or CRITICAL.  No logs will be created if 
+                                 options is ommitted.
     
+    --log_dir LOGDIR             file path to directory in which to store the 
+                                 logs. This option is required if --log is 
+                                 used.
     -h --help                    show this screen.
 """ 
 __author__= "Sean Landry"
@@ -76,6 +88,8 @@ import magic
 import time
 import gzip
 import logging
+
+
 
 class S3SyncUtility():
     
@@ -159,6 +173,7 @@ class DirectoryWalk():
         self.file = OrderedDict({})
         self.isdir = True
         self.md5sum = md5sum
+        self.logger = logging.getLogger(self.__class__.__name__)
         self.walk_dir(local)
 
     def walk_dir(self, local):
@@ -203,7 +218,7 @@ class DirectoryWalk():
             return s3
         
         except AttributeError as e:
-            sys.stderr.write(str(e) + '\n')
+            self.logger.exception(str(e))
 
 
 class ProgressPercentage(object):
@@ -223,11 +238,12 @@ class ProgressPercentage(object):
         with self._lock:
             self._seen_so_far += bytes_amount
             percentage = (self._seen_so_far / self._size) * 100
-            sys.stdout.write(
+            sys.stderr.write(
                 "\r%s  %s / %s  (%.2f%%)" % (
                     self._filename, self._seen_so_far, self._size,
                     percentage))
-            sys.stdout.flush()
+            sys.stderr.flush()
+        
 
 class SmartS3Sync():
 
@@ -244,6 +260,7 @@ class SmartS3Sync():
         self.walk = DirectoryWalk(local)
         self.uid = uid
         self.gid = gid
+        self.logger = logging.getLogger(self.__class__.__name__)
         self.metadir, self.metafile = self.parse_meta(metadata,
                             dirmode = meta_dir_mode, filemode = meta_file_mode, uid = uid, gid = gid)
         self.keys = self.parse_prefix(s3path, self.bucket, self.metadir)
@@ -253,7 +270,7 @@ class SmartS3Sync():
         self.localcache = localcache
         self.localcache_fname = localcache_fname
         self.localcache_dir = self.init_localcache(localcache_dir, localcache)
-
+        
 
     def init_boto3session(self, profile):
         """
@@ -277,6 +294,8 @@ class SmartS3Sync():
             if session:
                 self.s3cl = boto3.client('s3')
                 self.s3rc = boto3.resource('s3')
+                self.logger.debug('using ' + profile + ' profile in .aws/config'
+                                  +' and .aws/credentials')
                 return session
         elif os.environ.get('AWS_ACCESS_KEY_ID') and os.environ.get('AWS_SECRET_ACCESS_KEY') and os.environ.get('AWS_DEFAULT_REGION'):
             ## use environment variables
@@ -287,6 +306,7 @@ class SmartS3Sync():
                 ## only intialize client and resource if valid session is established
                 self.s3cl = boto3.client('s3')
                 self.s3rc = boto3.resource('s3')
+                self.logger.debug('using environment variables for aws credentials')
                 return session
 
         ## use 'default' in .aws config file
@@ -294,9 +314,12 @@ class SmartS3Sync():
         if session:
             self.s3cl = boto3.client('s3')
             self.s3rc = boto3.resource('s3')
+            self.logger.debug('using default profile in .aws/config and '
+                                  + '.aws/credentials')
             return session
         else:
-            sys.stderr.write('Cannot establish aws boto3 session, exiting...\n')
+            self.logger.critical('Cannot establish aws boto3 session, ' + 
+                                 + 'exiting...')
             sys.exit()
 
     def init_localcache(self, localcache_dir, localcache):
@@ -306,15 +329,15 @@ class SmartS3Sync():
         if localcache and not localcache_dir or localcache and not os.path.exists(localcache_dir):
             
             localcache_dir = os.path.join(os.environ.get('HOME'), '.s3sync/')
-            sys.stderr.write('local cache directory not found using '
-                             + 'default --> ' + localcache_dir + '\n')
-            
+            self.logger.warning('local cache directory not found using '
+                                + 'default --> ' + localcache_dir)
+           
             try:
-                sys.stderr.write('creating ' + localcache_dir + '\n')
+                self.logger.info('creating ' + localcache_dir)
                 os.mkdir(localcache_dir)
             except FileExistsError:
-                sys.stderr.write(localcache_dir + ' already exists, skipping...\n')
-
+                self.logger.warning(localcache_dir + ' already exists, skipping...')
+                
         return localcache_dir
 
     
@@ -363,13 +386,13 @@ class SmartS3Sync():
           
             return keys_updated
         else:
-             sys.stderr.write('no local md5 data found, calculating now ...\n')
+             self.logger.info('no local md5 data found, calculating now ...')
             
              ## using the below strategy to avoid any itermediate python 
              ## objects, encase local data store is large
              with gzip.open(md5_data, 'w') as f:
                  
-                 sys.stderr.write('writing md5 data to ' + md5_data + '\n')
+                 self.logger.info('writing md5 data to ' + md5_data)
                  
                  f.write(b'{')
                  
@@ -490,38 +513,38 @@ class SmartS3Sync():
                 if len(metaresult) == 0:
                     try:
                         ## if no metadata then add some now
-                        sys.stderr.write('no metadata found for ' + k 
-                                         + ' updating...\n')
+                        self.logger.info('no metadata found for ' + k 
+                                         + ' updating...')
                         update = self.meta_update(key = k, metadata = v)
                     except ClientError as e:
                         ## allow continue to allow existing directory structure                        
                         ## such as '/home' that may not have metadata but 
                         ## allowed by bucket policy
 
-                        sys.stderr.write(str(e) + "\n")
+                        self.logger.error(str(e) + "...skipping.")
             
                 if metaresult != v:
                     try:
-                        sys.stderr.write('bad metadata found for ' + k 
-                                         + ' updating...\n')
+                        self.logger.info('bad metadata found for ' + k 
+                                         + ' updating...')
                         update = self.meta_update(key = k, metadata = v)
                     except ClientError as e:
                         ## allow continue to allow existing directory structure
                         ## such as '/home' that may not have metadata but 
                         ## allowed by bucket policy
-                        sys.stderr.write(str(e) + "\n")
+                        self.logger.error(str(e) + "...skipping.")
                         
             except ClientError:
                 ## key does not exist so lets create it
                 try: 
-                    sys.stderr.write("creating key '" + k + "'\n")
+                    self.logger.info("creating key '" + k + "'")
 
                     make_key = self.s3cl.put_object(Bucket = self.bucket, Key = k,
                                                     Metadata = v)
                      
                 except ClientError:
                     ## Access Denied, s3 permission error
-                    sys.stderr.write("exiting...\n")
+                    self.logger.exception("exiting...")
                     sys.exit()
 
     def query(self, prefix, search):
@@ -564,7 +587,7 @@ class SmartS3Sync():
 
                     return matches
         except KeyError as e:
-            sys.stderr.write(str(e) + ' ... s3 key does not exist yet\n')
+            self.logger.info(prefix + ' key does not exist yet')
 
         return matches
 
@@ -641,19 +664,16 @@ class SmartS3Sync():
                     meta['Metadata']['gid'] = self.gid
 
                 try:
-                    sys.stderr.write("upload: " + self.local + " to " + key
-                                     + "\n")
+                    self.logger.info("upload: " + self.local + " to " + key)
 
                     self.s3cl.upload_fileobj(f, self.bucket, key,
                                     ExtraArgs = meta,
                                     Callback = ProgressPercentage(self.local))
 
-                    sys.stderr.write("\n")
-
                 except ClientError as e:
-                    sys.stderr.write(str(e) + "\n")
+                    self.logger.exception('upload failed')
         else:
-            sys.stderr.write(self.local + ' is up to date.\n')
+            self.logger.info(self.local + ' is up to date.')
 
     def sync_dir(self):
         """
@@ -676,7 +696,7 @@ class SmartS3Sync():
 
 
         if self.localcache:
-            sys.stderr.write('checking local cache...\n')
+            self.logger.info('checking local cache...')
             s3LocalDirAndFileKeys = self.check_localcache(s3LocalDirAndFileKeys)
         else:
            for k,v in s3LocalDirAndFileKeys.items():
@@ -709,8 +729,7 @@ class SmartS3Sync():
                 
                 if not k.endswith('/'):
                     with open(v['local'], 'rb') as f:
-                        sys.stderr.write("upload: " + v['local'] + " to "
-                                          + k + "\n")
+                        self.logger.info("upload: " + v['local'] + " to "+ k)
                 
                         l = v['local']
 
@@ -721,22 +740,21 @@ class SmartS3Sync():
                         self.s3cl.upload_fileobj(f, self.bucket, k,
                                      ExtraArgs = meta,
                                      Callback = ProgressPercentage(l))
-
-                        sys.stderr.write("\n")
+                        sys.stderr.write('\n')
                 else:
 
                     try:
-                        sys.stderr.write("creating key '" + k + "'\n")
+                        self.logger.info("creating key '" + k)
                         make_key = self.s3cl.put_object(Bucket = self.bucket, Key = k,
                                     Metadata = meta['Metadata'], ContentType = meta['ContentType'])
 
-                    except ClientError:
+                    except ClientError as e:
                         ## Access Denied, s3 permission error
-                        sys.stderr.write("exiting...\n")
+                        self.logger.exception("exiting")
                         sys.exit()
 
         else:
-            sys.stderr.write('S3 bucket is up to date\n')
+            self.logger.info('S3 bucket is up to date')
 
     def sync(self, interval = None):
         """
@@ -752,8 +770,8 @@ class SmartS3Sync():
                 self.sync_dir()
 
             else:
-                sys.stderr.write('ERROR --> ' + self.local + 
-                             'is not a file or a directory!\n')
+                self.logger.critical(self.local + 'is not a file or a '
+                                     + 'directory!\n')
                 sys.exit()
             if not interval:
                 autosync = False
@@ -769,21 +787,48 @@ def main():
     """
     Command line arguments.
     """
-
+    ## prevent library loggers from printing to log by setting level 
+    ## to critical
+    logging.getLogger('boto3').setLevel(logging.CRITICAL)
+    logging.getLogger('botocore').setLevel(logging.CRITICAL)
+    logging.getLogger('nose').setLevel(logging.CRITICAL)
+    logging.getLogger('s3transfer').setLevel(logging.CRITICAL)
+    
+    
+    ## command line args
     options = docopt(__doc__)
     
-    ## setup logger
-    # command line argument. Convert to upper case to allow the user to
-    # specify --log=DEBUG or --log=debug
-    numeric_level = getattr(logging, options['--log'].upper(), None)
-    
-    if not isinstance(numeric_level, int):
-        raise ValueError('Invalid log level: %s' % loglevel)
+    if options['--log']:
+        ## setup s3sync logger
+        # command line argument. Convert to upper case to allow the user to
+        # specify --log=DEBUG or --log=debug
+        numeric_level = getattr(logging, options['--log'].upper(), None)
+        
+        if not isinstance(numeric_level, int):
+            raise ValueError('Invalid log level: %s' % loglevel)
 
-    dateTag = datetime.now().strftime("%Y-%b-%d_%H-%M-%S")
+        dateTag = datetime.now().strftime("%Y-%b-%d_%H-%M-%S")
 
-    logging.basicConfig(filename="s3sync_%s.log" % dateTag, level=numeric_level)
-    
+        logging.basicConfig(format='%(asctime)s %(filename)s %(name)s.%(funcName)s() - %(levelname)s:%(message)s', 
+                            datefmt='%Y-%b-%d_%H:%M:%S', 
+                            filename= options['--log_dir'] + "/%s_s3sync.log" % dateTag, 
+                            level = numeric_level)
+
+        module_logger = logging.getLogger('s3sync')
+        
+        module_logger.setLevel(numeric_level)
+       
+        # create console handler
+        console = logging.StreamHandler()
+        console.setLevel(numeric_level)
+
+        # create formatter and add it to the handler
+        formatter = logging.Formatter('%(name)s.%(funcName)s() - %(levelname)s:%(message)s')
+        console.setFormatter(formatter)
+
+    else:
+         logging.basicConfig(format='%(name)s.%(funcName)s() - %(levelname)s:%(message)s',
+                            level = logging.DEBUG)
     
     s3_sync = SmartS3Sync(local = options['<localdir>'], 
                         s3path = options['<s3path>'], 
@@ -799,6 +844,8 @@ def main():
     s3_sync.sync(interval = options['--interval'])
 
 if __name__== "__main__":
+
+    
     main()
     
 
