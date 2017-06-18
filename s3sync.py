@@ -87,7 +87,7 @@ import magic
 import time
 import gzip
 import logging
-
+from logging.handlers import TimedRotatingFileHandler
 
 
 class S3SyncUtility():
@@ -805,23 +805,20 @@ def main():
     if not isinstance(numeric_level, int):
         raise ValueError('Invalid log level: %s' % loglevel)
 
-    dateTag = datetime.now().strftime("%Y-%b-%d_%H-%M-%S")
-    
-    #if options['--log_dir']:
-    #    logging.basicConfig(format='%(asctime)s %(filename)s %(name)s.%(funcName)s() - %(levelname)s:%(message)s', 
-    #                    datefmt='%Y-%b-%d_%H:%M:%S', 
-    #                    filename= options['--log_dir'] + "/%s_s3sync.log" % dateTag, 
-    #                    level = numeric_level)
-    #else:
-    #    logging.basicConfig(format='%(name)s.%(funcName)s() - %(levelname)s:%(message)s',
-    #                        level = numeric_level)
-
     module_logger = logging.getLogger()
     module_logger.setLevel(numeric_level)
    
     if options['--log_dir']:
         ## create file handler
-        fh = logging.FileHandler(options['--log_dir'] + "/%s_s3sync.log" % dateTag)
+        if options['--interval']:
+            dateTag = datetime.now().strftime("%Y-%b-%d")
+            fh = TimedRotatingFileHandler(options['--log_dir'] + "/%s_s3sync.log" % dateTag, when = 'M', interval =  float(options['--interval']))
+        
+        else:
+            dateTag = datetime.now().strftime("%Y-%b-%d_%H-%M-%S")
+            fh = logging.FileHandler(options['--log_dir'] + "/%s_s3sync.log" % dateTag)
+        
+        
         fh_formatter = logging.Formatter('%(asctime)s %(filename)s %(name)s.%(funcName)s() - %(levelname)s:%(message)s')
         fh.setFormatter(fh_formatter)
 
