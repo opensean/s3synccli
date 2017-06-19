@@ -658,8 +658,11 @@ class SmartS3Sync():
         
         key = self.s3path.split('/', 1)[1] + self.local.rsplit('/', 1)[1]
         
-        local_file_dict[key] = util.dzip_meta(key = self.local, md5sum = True)
-        
+        local_file_dict[key] = util.dzip_meta(key = self.local, md5sum = False)
+        if self.localcache:
+            self.logger.info('checking local cache...')
+            local_file_dict = self.check_localcache(local_file_dict) 
+
         matches = self.query(key, local_file_dict)
                 
         needs_sync = self.compare_etag(local_file_dict, matches)
@@ -674,7 +677,7 @@ class SmartS3Sync():
                 m = magic.open(magic.MAGIC_NONE)
                 m_result = m.load()
                 meta['ContentType'] = m.file(self.local).split(';')[0]
-                meta['Metadata'] = local_file_dict[key]
+                meta['Metadata'] = local_file_dict[key].copy()
                
                 ## remove unneccesary metadata 
                 rm_local_etag = meta['Metadata'].pop('ETag')
@@ -692,9 +695,11 @@ class SmartS3Sync():
                     self.s3cl.upload_fileobj(f, self.bucket, key,
                                     ExtraArgs = meta,
                                     Callback = ProgressPercentage(self.local))
-
+                    sys.stderr.write('\n')
                 except ClientError as e:
                     self.logger.exception('upload failed')
+
+            self.verify_sync(needs_sync)
         else:
             self.logger.info(self.local + ' is up to date.')
 
@@ -742,7 +747,9 @@ class SmartS3Sync():
                 m = magic.open(magic.MAGIC_NONE)
                 m_result = m.load()
                 meta['ContentType'] = m.file(v['local']).split(';')[0]
-                meta['Metadata'] = v
+
+                ## copy v becuase intact dict is needed to verify sync
+                meta['Metadata'] = v.copy()
 
 
                 ## check for uid & gid
@@ -776,9 +783,34 @@ class SmartS3Sync():
                         ## Access Denied, s3 permission error
                         self.logger.exception("exiting")
                         sys.exit()
-
+            
+            self.verify_sync(needs_sync)
         else:
             self.logger.info('S3 bucket is up to date')
+   
+    def verify_sync(self, just_synced):
+        """
+        Verify the completed sync.
+
+        Args:
+            just_synced (OrderedDict): items just synced to bucket.
+        
+        OrderedDict structure:
+        {'s3key/path': {'uid':'1000', 'Etag':'###', 'mode':'33204', etc...'}}
+        
+        """
+
+        self.logger.info('verifying sync')
+        ## paginate bucket
+        matches = self.query(self.s3path[len(self.bucket) + 1:],
+                                    just_synced)
+        faulty_syncs = self.compare_etag(just_synced, matches)
+        
+        if faulty_syncs:
+            for k,v in faulty_syncs.items():
+                self.logger.error('bad upload: ' + v['local'])
+        else:
+            self.logger.info('sync verified')
 
     def sync(self, interval = None):
         """
