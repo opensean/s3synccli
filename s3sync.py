@@ -5,9 +5,9 @@
 ##              and SmartS3Sync() classes.
 
 """
+
 Sync local data with S3 while maintaining metadata.  Maintaining metadata is 
 crucial for working with S3 as a mounted file system via s3fs. 
-
 
 Metadata notes
 --------------
