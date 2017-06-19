@@ -11,7 +11,6 @@
     Sync local data with S3 while maintaining metadata.  Maintaining metadata is 
     crucial for working with S3 as a mounted file system via s3fs. 
     
-    
     Metadata notes
     --------------
     when in doubt:
@@ -20,22 +19,55 @@
         - for files use "mode":"33204"
     
     Usage:
-        s3sync <localdir> <s3path> [--metadata METADATA --meta_dir_mode METADIR --meta_file_mode METAFILE --uid UID --gid GID --profile PROFILE --localcache --localcache_dir CACHEDIR --interval INTERVAL]
+        s3sync <localdir> <s3path> [--metadata METADATA] [--meta_dir_mode METADIR]
+                                   [--meta_file_mode METAFILE] [--uid UID] 
+                                   [--gid GID] [--profile PROFILE] [--localcache] 
+                                   [--localcache_dir CACHEDIR] [--interval INTERVAL] 
+                                   [--log LOGLEVEL] [--log_dir LOGDIR]
         s3sync -h | --help 
     
     Options: 
-        <localdir>                        local directory file path
-        <s3path>                          s3 key, e.g. cst-compbio-research-00-buc/
-        --metadata METADATA               metadata in json format e.g. '{"uid":"6812", "gid":"6812"}'
-        --meta_dir_mode METADIR           mode to use for directories in metadata if none is found locally [default: 509]
-        --meta_file_mode METAFILE         mode to use for files in metadata if none if found locally [default: 33204]
-        --profile PROFILE                 aws profile name 
-        --uid UID                         user id that will overide any uid information detected for files and directories
-        --gid GID                         group id that will overid any gid information detected for files and directories
-        --localcache                      use local data stored in .s3sync/s3sync_md5_cache.json.gz to save on md5sum computation.
-        --localcache_dir CACHEDIR         directory in which to store local_md5_cache.json.gz, default: os.path.join(os.environ.get('HOME'), '.s3sync') 
-        --interval INTERVAL               enter any number greater than 0 to start autosync mode, program will sync every interval (min)
-        -h --help                         show this screen.
+        <localdir>                   local directory file path
+        
+        <s3path>                     s3 key, e.g. cst-compbio-research-00-buc/
+        
+        --metadata METADATA          metadata in json format 
+                                     e.g. '{"uid":"6812", "gid":"6812"}'
+        
+        --meta_dir_mode METADIR      mode to use for directories in metadata if 
+                                     none is found locally [default: 509]
+        
+        --meta_file_mode METAFILE    mode to use for files in metadata if none if 
+                                     found locally [default: 33204]
+        
+        --profile PROFILE            aws profile name 
+        
+        --uid UID                    user id that will overide any uid information
+                                     detected for files and directories
+        
+        --gid GID                    group id that will overid any gid information
+                                     detected for files and directories
+        
+        --localcache                 use local data stored in --localcache_dir to 
+                                     save on md5sum computation.
+        
+        --localcache_dir CACHEDIR    directory in which to store 
+                                     local_md5_cache.json.gz, default: 
+                                     os.path.join(os.environ.get('HOME'), '.s3sync') 
+        
+        --interval INTERVAL          enter any number greater than 0 to start 
+                                     autosync mode, program will sync every 
+                                     interval (min)
+        
+        --log LOGLEVEL               set the logger level (threshold), available 
+                                     options include DEBUG, INFO, WARNING, ERROR, 
+                                     or CRITICAL. [default: DEBUG]
+        
+        --log_dir LOGDIR             file path to directory in which to store the 
+                                     logs. No log files are created if this option
+                                     is ommited.
+        -h --help                    show this screen.
+
 ```
 
 ### grab the container
@@ -73,6 +105,10 @@ directory mounted to ```/s3sync/.s3sync```.  For instance, the container will
 encounter permission errors when trying to read from an NFS due to root 
 squashing.  To avoid permission errors run the container with a UID using the 
 ```-u``` docker run arg.  For example, ```-u 1000```.
+
+```/s3sync/logs```
+
+refer to the **logging** section of this readme.
 
 ### AWS credentials
 
@@ -114,7 +150,7 @@ Put everything together and run the container as an exectuble.  For example,
     $ docker run -it --rm --env-file /path/to/env/.env -u 1000 \
                  -v /path/to/local/dir/:/s3sync/data \
                  -v /path/to/local/cache:/s3sync/.s3sync \
-                 some_container_repo/s3synccli:0.1 \
+                 opensean/s3synccli:latest \
                  s3bucket/path/to/dir/
 
 ```
@@ -128,7 +164,7 @@ mode.
     $ docker run -it --rm --env-file /path/to/env/.env -u 1000 \
                  -v /path/to/local/dir/:/s3sync/data \
                  -v /path/to/local/cache:/s3sync/.s3sync \
-                 some_container_repo/s3synccli:0.1 \
+                 opensean/s3synccli:latest \
                  s3bucket/path/to/dir/ --interval 5
 
 ```
@@ -140,11 +176,11 @@ code directly by overiding the container entrypoint.  For example,
 
 ```
    $ docker run -it --rm --entrypoint bash --env-file /path/to/env/.env \ 
-               -u 1000 \
-               -v /path/to/local/dir/:/s3sync/data \
-               -v /path/to/local/cache:/s3sync/.s3sync \
-               some_container_repo/s3synccli:0.1 \
-               s3bucket/path/to/dir/ 
+                -u 1000 \
+                -v /path/to/local/dir/:/s3sync/data \
+                -v /path/to/local/cache:/s3sync/.s3sync \
+                opensean/s3synccli:latest \
+                s3bucket/path/to/dir/ 
 
 ```
 
@@ -152,6 +188,41 @@ Once the shell session is active one can run the python code directly.
 
 ```
    $ python3 s3sync.py data s3bucket/path/to/dir/ --localcache --localcache_dir .s3sync 
+```
+
+### logging
+
+s3synccli allows for the customization of the programs logging behavior using 
+the ```--log``` and ```--log_dir``` args.  The following is an example running 
+the container as an executable with the logging threshold set to ```DEBUG``` 
+and a directory to store the logs files generated.
+
+```
+    $ docker run -it --rm --env-file /path/to/env/.env \
+                 -u 1000 \
+                 -v /path/to/local/dir/:/s3sync/data \
+                 -v /path/to/local/cache:/s3sync/.s3sync \
+                 -v /path/to/local/logs:/s3sync/logs \
+                 opensean/s3synccli:latest \
+                 s3bucket/path/to/dir/ \
+                 --log DEBUG \
+                 --log_dir /s3sync/logs
+```
+
+**Note:** if the ```--log_dir``` arg is ommited no log files be generated but 
+one can still customize the logging output to the console by setting the 
+```--log``` arg.  For example,
+
+```
+    $ docker run -it --rm --env-file /path/to/env/.env \
+                 -u 1000 \
+                 -v /path/to/local/dir/:/s3sync/data \
+                 -v /path/to/local/cache:/s3sync/.s3sync \
+                 -v /path/to/local/logs:/s3sync/logs \
+                 opensean/s3synccli:latest \
+                 s3bucket/path/to/dir/ \
+                 --log INFO
+
 ```
 
 ### Future

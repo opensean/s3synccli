@@ -825,10 +825,7 @@ def main():
 
     module_logger = logging.getLogger()
     module_logger.setLevel(numeric_level)
-    #rootLogger = logging.getLogger()
-    #if rootLogger.level != numeric_level:
-    #    logging.basicConfig(level = numeric_level)
-
+    
     if options['--log_dir']:
         ## create file handler
         if options['--interval']:
@@ -855,7 +852,7 @@ def main():
     console.setLevel(numeric_level)
 
     # create formatter and add it to the handler
-    console_formatter = logging.Formatter('%(name)s.%(funcName)s() - %(levelname)s:%(message)s')
+    console_formatter = logging.Formatter('%(asctime)s %(name)s.%(funcName)s() - %(levelname)s:%(message)s')
     console.setFormatter(console_formatter)
     
     module_logger.addHandler(console)

@@ -13,6 +13,7 @@ RUN mkdir /s3sync
 COPY . /s3sync/
 RUN mkdir /s3sync/data
 RUN mkdir /s3sync/.s3sync
+RUN mkdir /s3sync/logs
 RUN chmod -R o+rwx /s3sync/
 
 WORKDIR /s3sync
