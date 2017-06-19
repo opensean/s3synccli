@@ -195,11 +195,9 @@ Once the shell session is active one can run the python code directly.
 s3synccli allows for the customization of logging behavior using the 
 ```--log``` and ```--log_dir``` args.  At build time the container
 creates the directory ```/s3sync/logs``` for use as the 
-```--logs_dir``` when logs files are required.  The following is an example 
+```--logs_dir``` arg when logs files are required.  The following is an example
 running the container as an executable with the logging threshold set to 
-```DEBUG``` and a directory to store the logs files generated.  At build time 
-the container creates the directory ```/s3sync/logs``` for use as the 
-```--logs_dir``` when logs files are required.
+```DEBUG``` and a directory to store the logs files generated.
 
 ```
     $ docker run -it --rm --env-file /path/to/env/.env \
