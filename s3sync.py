@@ -89,7 +89,6 @@ import gzip
 import logging
 from logging.handlers import TimedRotatingFileHandler
 
-
 class S3SyncUtility():
     
     def __init__(self):
@@ -251,7 +250,8 @@ class SmartS3Sync():
                  meta_file_mode = "33204", uid = None, gid = None,
                  localcache = False,
                  localcache_dir = None,
-                 localcache_fname = 's3sync_md5_cache.json.gz'):
+                 localcache_fname = 's3sync_md5_cache.json.gz', 
+                 log = logging.DEBUG, library = logging.CRITICAL):
         
         self.local = local
         self.s3path = s3path
@@ -259,7 +259,7 @@ class SmartS3Sync():
         self.walk = DirectoryWalk(local)
         self.uid = uid
         self.gid = gid
-        self.logger = logging.getLogger(self.__class__.__name__)
+        self.logger = self.init_logger(log, library = library)
         self.metadir, self.metafile = self.parse_meta(metadata,
                             dirmode = meta_dir_mode, filemode = meta_file_mode, uid = uid, gid = gid)
         self.keys = self.parse_prefix(s3path, self.bucket, self.metadir)
@@ -271,6 +271,29 @@ class SmartS3Sync():
         self.localcache_dir = self.init_localcache(localcache_dir, localcache)
         
 
+    def init_logger(self, log = logging.DEBUG, library = logging.CRITICAL):
+        ## prevent library loggers from printing to log by setting level 
+        ## to critical
+        logging.getLogger('boto3').setLevel(library)
+        logging.getLogger('botocore').setLevel(library)
+        logging.getLogger('nose').setLevel(library)
+        logging.getLogger('s3transfer').setLevel(library)
+        rootLogger = logging.getLogger()
+        class_logger = logging.getLogger(self.__class__.__name__)   
+        
+        ## change root logger level if not equal to log arg, necessary if 
+        ## working with SmartS3Sync in ipython session, logging library uses
+        ## a hierarchy structure meaning child loggers will pass args to 
+        ## parent first, root loggers default level is 30 (logging.WARNING),
+        ## need to set root logger to log arg level to allow child logger a 
+        ## chance to handle log output
+        if rootLogger.level != log:
+            logging.basicConfig(level = log)
+
+        class_logger.setLevel(log)
+        
+        return class_logger
+    
     def init_boto3session(self, profile):
         """
         Initialize a boto3 session, s3 client, and s3 resource.
@@ -293,8 +316,8 @@ class SmartS3Sync():
             if session:
                 self.s3cl = boto3.client('s3')
                 self.s3rc = boto3.resource('s3')
-                self.logger.debug('using ' + profile + ' profile in .aws/config'
-                                  +' and .aws/credentials')
+                self.logger.debug('using ' + profile + ' profile in '
+                                  + '.aws/config and .aws/credentials')
                 return session
         elif os.environ.get('AWS_ACCESS_KEY_ID') and os.environ.get('AWS_SECRET_ACCESS_KEY') and os.environ.get('AWS_DEFAULT_REGION'):
             ## use environment variables
@@ -335,7 +358,8 @@ class SmartS3Sync():
                 self.logger.info('creating ' + localcache_dir)
                 os.mkdir(localcache_dir)
             except FileExistsError:
-                self.logger.warning(localcache_dir + ' already exists, skipping...')
+                self.logger.info(localcache_dir 
+                                  + ' already exists, skipping...')
                 
         return localcache_dir
 
@@ -702,7 +726,8 @@ class SmartS3Sync():
                s3LocalDirAndFileKeys[k]['ETag'] = utility.md5(s3LocalDirAndFileKeys[k]['local'])
         
         ## paginate bucket
-        matches = self.query(self.s3path[len(self.bucket) + 1:], s3LocalDirAndFileKeys)
+        matches = self.query(self.s3path[len(self.bucket) + 1:], 
+                             s3LocalDirAndFileKeys)
 
         #print(matches)
         needs_sync = self.compare_etag(s3LocalDirAndFileKeys, matches)
@@ -785,14 +810,7 @@ class SmartS3Sync():
 def main():
     """
     Command line arguments.
-    """
-    ## prevent library loggers from printing to log by setting level 
-    ## to critical
-    logging.getLogger('boto3').setLevel(logging.CRITICAL)
-    logging.getLogger('botocore').setLevel(logging.CRITICAL)
-    logging.getLogger('nose').setLevel(logging.CRITICAL)
-    logging.getLogger('s3transfer').setLevel(logging.CRITICAL)
-    
+    """  
     
     ## command line args
     options = docopt(__doc__)
@@ -807,16 +825,23 @@ def main():
 
     module_logger = logging.getLogger()
     module_logger.setLevel(numeric_level)
-   
+    #rootLogger = logging.getLogger()
+    #if rootLogger.level != numeric_level:
+    #    logging.basicConfig(level = numeric_level)
+
     if options['--log_dir']:
         ## create file handler
         if options['--interval']:
             dateTag = datetime.now().strftime("%Y-%b-%d")
-            fh = TimedRotatingFileHandler(options['--log_dir'] + "/%s_s3sync.log" % dateTag, when = 'M', interval =  float(options['--interval']))
+            fh = TimedRotatingFileHandler(options['--log_dir'] 
+                                    + "/%s_s3sync.log" % dateTag, 
+                                    when = 'M', 
+                                    interval =  float(options['--interval']))
         
         else:
             dateTag = datetime.now().strftime("%Y-%b-%d_%H-%M-%S")
-            fh = logging.FileHandler(options['--log_dir'] + "/%s_s3sync.log" % dateTag)
+            fh = logging.FileHandler(options['--log_dir'] 
+                                     + "/%s_s3sync.log" % dateTag)
         
         
         fh_formatter = logging.Formatter('%(asctime)s %(filename)s %(name)s.%(funcName)s() - %(levelname)s:%(message)s')
@@ -844,7 +869,8 @@ def main():
                         uid = options['--uid'],
                         gid = options['--gid'],
                         localcache = options['--localcache'],
-                        localcache_dir = options['--localcache_dir'])
+                        localcache_dir = options['--localcache_dir'],
+                        log = numeric_level)
 
     s3_sync.sync(interval = options['--interval'])
 
