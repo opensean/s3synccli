@@ -59,7 +59,7 @@ Options:
     
     --log LOGLEVEL               set the logger level (threshold), available 
                                  options include DEBUG, INFO, WARNING, ERROR, 
-                                 or CRITICAL. [default: DEBUG]
+                                 or CRITICAL. [default: INFO]
     
     --log_dir LOGDIR             file path to directory in which to store the 
                                  logs. No log files are created if this option
@@ -251,7 +251,7 @@ class SmartS3Sync():
                  localcache = False,
                  localcache_dir = None,
                  localcache_fname = 's3sync_md5_cache.json.gz', 
-                 log = logging.DEBUG, library = logging.CRITICAL):
+                 log = logging.INFO, library = logging.CRITICAL):
         
         self.local = local
         self.s3path = s3path
@@ -639,9 +639,9 @@ class SmartS3Sync():
             a = v['ETag']
             try:
                 b = matches[k]['ETag'].replace('"', '')
-                #print(a, b)
+                self.logger.debug('match found s3: ' + b + ' local: ' + a + ' path: ' + v['local'])
             except (KeyError, TypeError) as e:
-                #sys.stderr.write(a + " needs upload \n")
+                self.logger.debug(v['local'] + ':'+ a + " needs upload")
                 if needs_sync:
                     needs_sync[k] = v
                 else:
