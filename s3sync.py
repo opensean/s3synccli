@@ -20,7 +20,9 @@ Usage:
     s3sync <localdir> <s3path> [--metadata METADATA] [--meta_dir_mode METADIR]
                                [--meta_file_mode METAFILE] [--uid UID] 
                                [--gid GID] [--profile PROFILE] [--localcache] 
-                               [--localcache_dir CACHEDIR] [--interval INTERVAL] 
+                               [--localcache_dir CACHEDIR] 
+                               [--localcache_fname FILENAME] 
+                               [--interval INTERVAL] 
                                [--log LOGLEVEL] [--log_dir LOGDIR]
     s3sync -h | --help 
 
@@ -53,6 +55,10 @@ Options:
                                  local_md5_cache.json.gz, default: 
                                  os.path.join(os.environ.get('HOME'), '.s3sync') 
     
+    --localcache_fname FILENAME  file name to use for local cache.  Use this 
+                                 arg to to explicity specify cache name or use 
+                                 an existing cache file.
+    
     --interval INTERVAL          enter any number greater than 0 to start 
                                  autosync mode, program will sync every 
                                  interval (min)
@@ -83,11 +89,13 @@ import os
 import hashlib
 from binascii import unhexlify
 import threading
-import magic 
+import magic
+import datetime
 import time
 import gzip
 import logging
 from logging.handlers import TimedRotatingFileHandler
+import uuid
 
 class S3SyncUtility():
     
@@ -253,7 +261,7 @@ class SmartS3Sync():
                  meta_file_mode = "33204", uid = None, gid = None,
                  localcache = False,
                  localcache_dir = None,
-                 localcache_fname = 's3sync_md5_cache.json.gz', 
+                 localcache_fname = None, 
                  log = logging.INFO, library = logging.CRITICAL):
         
         self.local = local
@@ -270,7 +278,7 @@ class SmartS3Sync():
         self.s3rc = None
         self.session = self.init_boto3session(profile)
         self.localcache = localcache
-        self.localcache_fname = localcache_fname
+        self.localcache_fname = self.init_localcache_fname(localcache_fname)
         self.localcache_dir = self.init_localcache(localcache_dir, localcache)
         
 
@@ -348,6 +356,16 @@ class SmartS3Sync():
                                  + 'exiting...')
             sys.exit()
 
+    def init_localcache_fname(self, localcache_fname):
+        """
+
+        """
+        if localcache_fname:
+            return localcache_fname
+        else:
+            seq = ('{0:%Y-%m-%d_%H-%M-%S}'.format(datetime.datetime.now()), str(uuid.uuid4()), 's3sync_md5_cache.json.gz')
+            return '_'.join(seq)
+
     def init_localcache(self, localcache_dir, localcache):
         """
         
@@ -378,6 +396,8 @@ class SmartS3Sync():
             keys (OrderedDict): 
             {'local/path': {'uid':'1000', 'Etag':'###', 'mode':'33204', etc...'}}
         """
+        self.logger.info('using localcache file: '+ self.localcache_fname)
+
         if not os.path.exists(self.localcache_dir):
             os.mkdir(self.localcache_dir)
         
@@ -914,6 +934,7 @@ def main():
                         gid = options['--gid'],
                         localcache = options['--localcache'],
                         localcache_dir = options['--localcache_dir'],
+                        localcache_fname = options['--localcache_fname'],
                         log = numeric_level)
 
     s3_sync.sync(interval = options['--interval'])
