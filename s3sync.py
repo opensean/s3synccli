@@ -182,9 +182,11 @@ class DirectoryWalk():
             local(str): local directory path.
 
         """
+        self.logger.debug('walking local directory or file')
         s3util = S3SyncUtility()
         d = sorted(os.walk(local))
         if len(d) == 0 and os.path.isfile(local):
+            self.logger.debug(local + ' is a file.')
             self.isdir = False
         for a,b,c in d:
             self.root.update({a:s3util.dzip_meta(a)})
@@ -201,7 +203,7 @@ class DirectoryWalk():
             s3path (str): s3 bucket key path (e.g. buc00/home/)
             isdir (boolean): True keys are directories, False keys are objects.
 
-        """
+        """ 
         try:
         
             s3 = OrderedDict({})
@@ -210,9 +212,10 @@ class DirectoryWalk():
                     ## omit first 
                     if os.path.join(s3path.split('/', 1)[1], k[len(self.local) + 1:] + '/') != '/':
                         s3.update({os.path.join(s3path.split('/', 1)[1], k[len(self.local) + 1:] + '/'):v})
+                        self.logger.debug('local: ' + k + ' s3key: ' + os.path.join(s3path.split('/', 1)[1], k[len(self.local) + 1:] + '/'))
                 else:
                     s3.update({os.path.join(s3path.split('/', 1)[1], k[len(self.local) + 1:]):v})
-            
+                    self.logger.debug('local: ' + k + ' s3key: ' + os.path.join(s3path.split('/', 1)[1], k[len(self.local) + 1:]))
             return s3
         
         except AttributeError as e:
@@ -310,6 +313,7 @@ class SmartS3Sync():
         Returns:
             session (boto3.Session)
         """
+        self.logger.debug('intializing boto3 session')
         if profile:
             ## use profile names passed in args, looks for .aws config file
             session = boto3.Session(profile_name = profile)
@@ -348,6 +352,7 @@ class SmartS3Sync():
         """
         
         """
+        self.logger.debug('intializing localcache')
         if localcache and not localcache_dir or localcache and not os.path.exists(localcache_dir):
             
             localcache_dir = os.path.join(os.environ.get('HOME'), '.s3sync/')
@@ -366,7 +371,12 @@ class SmartS3Sync():
     
     def check_localcache(self, keys):
         """
+        Check a localcache file for md5 data already calculated to save on 
+        computation.
 
+        Args:
+            keys (OrderedDict): 
+            {'local/path': {'uid':'1000', 'Etag':'###', 'mode':'33204', etc...'}}
         """
         if not os.path.exists(self.localcache_dir):
             os.mkdir(self.localcache_dir)
@@ -663,8 +673,10 @@ class SmartS3Sync():
             self.logger.info('checking local cache...')
             local_file_dict = self.check_localcache(local_file_dict) 
 
+        self.logger.debug('paginate (query) bucket')
         matches = self.query(key, local_file_dict)
-                
+        
+        self.logger.debug('comparing etags (md5sum)')
         needs_sync = self.compare_etag(local_file_dict, matches)
         
         if needs_sync:
@@ -730,11 +742,12 @@ class SmartS3Sync():
            for k,v in s3LocalDirAndFileKeys.items():
                s3LocalDirAndFileKeys[k]['ETag'] = utility.md5(s3LocalDirAndFileKeys[k]['local'])
         
+        self.logger.debug('paginate (query) bucket')
         ## paginate bucket
         matches = self.query(self.s3path[len(self.bucket) + 1:], 
                              s3LocalDirAndFileKeys)
 
-        #print(matches)
+        self.logger.debug('comparing etags (md5sum)')
         needs_sync = self.compare_etag(s3LocalDirAndFileKeys, matches)
          
         if needs_sync:
@@ -816,6 +829,8 @@ class SmartS3Sync():
         """
         Complete a sync between a local directory or file and an s3 bucket.  
 
+        Args:
+            interval (float): sync interval in minutes.
         """
         autosync = True
         while autosync: 
