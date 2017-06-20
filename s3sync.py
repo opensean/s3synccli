@@ -68,7 +68,7 @@ Options:
 """ 
 __author__= "Sean Landry"
 __email__= "sean.d.landry@gmail.com, sean.landry@celllsignal.com"
-__data__= "16june2017"
+__date__= "20june2017"
 __version__= "0.1.0"
 
 from docopt import docopt
