@@ -210,7 +210,7 @@ running the container as an executable with the logging threshold set to
 ```DEBUG``` and a directory to store the logs files generated.
 
 ```
-    $ docker run -it --rm --env-file /path/to/env/.env \
+    $ docker run --rm --env-file /path/to/env/.env \
                  -u 1000 \
                  -v /path/to/local/dir/:/s3sync/data \
                  -v /path/to/local/cache:/s3sync/.s3sync \
