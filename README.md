@@ -61,12 +61,13 @@
         
         --log LOGLEVEL               set the logger level (threshold), available 
                                      options include DEBUG, INFO, WARNING, ERROR, 
-                                     or CRITICAL. [default: DEBUG]
+                                     or CRITICAL. [default: INFO]
         
         --log_dir LOGDIR             file path to directory in which to store the 
                                      logs. No log files are created if this option
                                      is ommited.
         -h --help                    show this screen.
+    
 
 ```
 
