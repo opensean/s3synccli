@@ -22,7 +22,7 @@ Usage:
                                [--gid GID] [--profile PROFILE] [--localcache] 
                                [--localcache_dir CACHEDIR] 
                                [--localcache_fname FILENAME] 
-                               [--interval INTERVAL] 
+                               [--interval INTERVAL] [--force]
                                [--log LOGLEVEL] [--log_dir LOGDIR]
     s3sync -h | --help 
 
@@ -30,6 +30,9 @@ Options:
     <localdir>                   local directory file path
     
     <s3path>                     s3 key, e.g. cst-compbio-research-00-buc/
+
+    --force                      force upload even if local files have not 
+                                 changed, ignore md5 cache.
     
     --metadata METADATA          metadata in json format 
                                  e.g. '{"uid":"6812", "gid":"6812"}'
@@ -73,7 +76,7 @@ Options:
     -h --help                    show this screen.
 """ 
 __author__= "Sean Landry"
-__email__= "sean.d.landry@gmail.com, sean.landry@celllsignal.com"
+__email__= "sean.d.landry@gmail.com"
 __date__= "20june2017"
 __version__= "0.1.0"
 
@@ -677,7 +680,7 @@ class SmartS3Sync():
                     needs_sync = OrderedDict({k:v})
         return needs_sync
 
-    def sync_file(self):
+    def sync_file(self, force = False):
         """
         Sync a local file with an s3 bucket.
  
@@ -688,15 +691,24 @@ class SmartS3Sync():
         key = self.s3path.split('/', 1)[1] + self.local.rsplit('/', 1)[1]
         
         local_file_dict[key] = util.dzip_meta(key = self.local, md5sum = False)
-        if self.localcache:
-            self.logger.info('checking local cache...')
-            local_file_dict = self.check_localcache(local_file_dict) 
-
-        self.logger.debug('paginate (query) bucket')
-        matches = self.query(key, local_file_dict)
         
-        self.logger.debug('comparing etags (md5sum)')
-        needs_sync = self.compare_etag(local_file_dict, matches)
+        if force:
+            local_file_dict[key] = util.dzip_meta(key = self.local, md5sum = True)
+            ## force an upload of all files
+            needs_sync = local_file_dict
+            self.logger.warning('using force, ignoring local cache and s3 '
+                                'bucket contents, uploading all files')
+        
+        else:
+            if self.localcache:
+                self.logger.info('checking local cache...')
+                local_file_dict = self.check_localcache(local_file_dict) 
+
+            self.logger.debug('paginate (query) bucket')
+            matches = self.query(key, local_file_dict)
+            
+            self.logger.debug('comparing etags (md5sum)')
+            needs_sync = self.compare_etag(local_file_dict, matches)
         
         if needs_sync:
             ## verify the s3path
@@ -734,7 +746,7 @@ class SmartS3Sync():
         else:
             self.logger.info(self.local + ' is up to date.')
 
-    def sync_dir(self):
+    def sync_dir(self, force = False):
         """
         Sync a local directory with an s3 bucket.
 
@@ -753,21 +765,28 @@ class SmartS3Sync():
         for k,v in s3localfilekeys.items():
             s3LocalDirAndFileKeys.update({k:v})
 
-
-        if self.localcache:
-            self.logger.info('checking local cache...')
-            s3LocalDirAndFileKeys = self.check_localcache(s3LocalDirAndFileKeys)
-        else:
-           for k,v in s3LocalDirAndFileKeys.items():
-               s3LocalDirAndFileKeys[k]['ETag'] = utility.md5(s3LocalDirAndFileKeys[k]['local'])
         
-        self.logger.debug('paginate (query) bucket')
-        ## paginate bucket
-        matches = self.query(self.s3path[len(self.bucket) + 1:], 
-                             s3LocalDirAndFileKeys)
+        if force:
+            ## force an upload of all files
+            needs_sync = s3LocalDirAndFileKeys
+            self.logger.warning('using force, ignoring local cache and s3 '
+                                'bucket contents, uploading all files')
+        
+        else:
+            if self.localcache:
+                self.logger.info('checking local cache...')
+                s3LocalDirAndFileKeys = self.check_localcache(s3LocalDirAndFileKeys)
+            else:
+               for k,v in s3LocalDirAndFileKeys.items():
+                   s3LocalDirAndFileKeys[k]['ETag'] = utility.md5(s3LocalDirAndFileKeys[k]['local'])
+            
+            self.logger.debug('paginate (query) bucket')
+            ## paginate bucket
+            matches = self.query(self.s3path[len(self.bucket) + 1:], 
+                                 s3LocalDirAndFileKeys)
 
-        self.logger.debug('comparing etags (md5sum)')
-        needs_sync = self.compare_etag(s3LocalDirAndFileKeys, matches)
+            self.logger.debug('comparing etags (md5sum)')
+            needs_sync = self.compare_etag(s3LocalDirAndFileKeys, matches)
          
         if needs_sync:
             ## verify the s3path
@@ -844,7 +863,7 @@ class SmartS3Sync():
         else:
             self.logger.info('sync verified')
 
-    def sync(self, interval = None):
+    def sync(self, interval = None, force = False):
         """
         Complete a sync between a local directory or file and an s3 bucket.  
 
@@ -854,10 +873,10 @@ class SmartS3Sync():
         autosync = True
         while autosync: 
             if os.path.isfile(self.local):
-                self.sync_file()
+                self.sync_file(force = force)
 
             elif os.path.isdir(self.local):
-                self.sync_dir()
+                self.sync_dir(force = force)
 
             else:
                 self.logger.critical(self.local + 'is not a file or a '
@@ -936,7 +955,7 @@ def main():
                         localcache_fname = options['--localcache_fname'],
                         log = numeric_level)
 
-    s3_sync.sync(interval = options['--interval'])
+    s3_sync.sync(interval = options['--interval'], force = options['--force'])
 
 if __name__== "__main__":
 
