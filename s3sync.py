@@ -84,7 +84,6 @@ import json
 import boto3
 from botocore.exceptions import ClientError
 from collections import OrderedDict
-from datetime import datetime
 import os
 import hashlib
 from binascii import unhexlify
@@ -896,14 +895,14 @@ def main():
     if options['--log_dir']:
         ## create file handler
         if options['--interval']:
-            dateTag = datetime.now().strftime("%Y-%b-%d")
+            dateTag = datetime.datetime.now().strftime("%Y-%b-%d")
             fh = TimedRotatingFileHandler(options['--log_dir'] 
                                     + "/%s_s3sync.log" % dateTag, 
                                     when = 'M', 
                                     interval =  float(options['--interval']))
         
         else:
-            dateTag = datetime.now().strftime("%Y-%b-%d_%H-%M-%S")
+            dateTag = datetime.datetime.now().strftime("%Y-%b-%d_%H-%M-%S")
             fh = logging.FileHandler(options['--log_dir'] 
                                      + "/%s_s3sync.log" % dateTag)
         
