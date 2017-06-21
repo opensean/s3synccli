@@ -8,71 +8,75 @@
     $ git clone https://github.com/opensean/s3synccli.git
     $ cd s3synccli
     $ python3 s3sync.py -h
-      Sync local data with S3 while maintaining metadata.  Maintaining metadata is 
-      crucial for working with S3 as a mounted file system via s3fs. 
-      
-      Metadata notes
-      --------------
-      when in doubt:
-      
-          - for directories use "mode":"509"
-          - for files use "mode":"33204"
-      
-      Usage:
-          s3sync <localdir> <s3path> [--metadata METADATA] [--meta_dir_mode METADIR]
-                                     [--meta_file_mode METAFILE] [--uid UID] 
-                                     [--gid GID] [--profile PROFILE] [--localcache] 
-                                     [--localcache_dir CACHEDIR] 
-                                     [--localcache_fname FILENAME] 
-                                     [--interval INTERVAL] 
-                                     [--log LOGLEVEL] [--log_dir LOGDIR]
-          s3sync -h | --help 
-      
-      Options: 
-          <localdir>                   local directory file path
-          
-          <s3path>                     s3 key, e.g. cst-compbio-research-00-buc/
-          
-          --metadata METADATA          metadata in json format 
-                                       e.g. '{"uid":"6812", "gid":"6812"}'
-          
-          --meta_dir_mode METADIR      mode to use for directories in metadata if 
-                                       none is found locally [default: 509]
-          
-          --meta_file_mode METAFILE    mode to use for files in metadata if none if 
-                                       found locally [default: 33204]
-          
-          --profile PROFILE            aws profile name 
-          
-          --uid UID                    user id that will overide any uid information
-                                       detected for files and directories
-          
-          --gid GID                    group id that will overid any gid information
-                                       detected for files and directories
-          
-          --localcache                 use local data stored in --localcache_dir to 
-                                       save on md5sum computation.
-          
-          --localcache_dir CACHEDIR    directory in which to store 
-                                       local_md5_cache.json.gz, default: 
-                                       os.path.join(os.environ.get('HOME'), '.s3sync') 
-          
-          --localcache_fname FILENAME  file name to use for local cache.  Use this 
-                                       arg to to explicity specify cache name or use 
-                                       an existing cache file.
-          
-          --interval INTERVAL          enter any number greater than 0 to start 
-                                       autosync mode, program will sync every 
-                                       interval (min)
-          
-          --log LOGLEVEL               set the logger level (threshold), available 
-                                       options include DEBUG, INFO, WARNING, ERROR, 
-                                       or CRITICAL. [default: INFO]
-          
-          --log_dir LOGDIR             file path to directory in which to store the 
-                                       logs. No log files are created if this option
-                                       is ommited.
-          -h --help                    show this screen. 
+    Sync local data with S3 while maintaining metadata.  Maintaining metadata is 
+    crucial for working with S3 as a mounted file system via s3fs. 
+    
+    Metadata notes
+    --------------
+    when in doubt:
+    
+        - for directories use "mode":"509"
+        - for files use "mode":"33204"
+    
+    Usage:
+        s3sync <localdir> <s3path> [--metadata METADATA] [--meta_dir_mode METADIR]
+                                   [--meta_file_mode METAFILE] [--uid UID] 
+                                   [--gid GID] [--profile PROFILE] [--localcache] 
+                                   [--localcache_dir CACHEDIR] 
+                                   [--localcache_fname FILENAME] 
+                                   [--interval INTERVAL] [--force]
+                                   [--log LOGLEVEL] [--log_dir LOGDIR]
+        s3sync -h | --help 
+    
+    Options: 
+        <localdir>                   local directory file path
+        
+        <s3path>                     s3 key, e.g. cst-compbio-research-00-buc/
+    
+        --force                      force upload even if local files have not 
+                                     changed, ignore md5 cache.
+        
+        --metadata METADATA          metadata in json format 
+                                     e.g. '{"uid":"6812", "gid":"6812"}'
+        
+        --meta_dir_mode METADIR      mode to use for directories in metadata if 
+                                     none is found locally [default: 509]
+        
+        --meta_file_mode METAFILE    mode to use for files in metadata if none if 
+                                     found locally [default: 33204]
+        
+        --profile PROFILE            aws profile name 
+        
+        --uid UID                    user id that will overide any uid information
+                                     detected for files and directories
+        
+        --gid GID                    group id that will overid any gid information
+                                     detected for files and directories
+        
+        --localcache                 use local data stored in --localcache_dir to 
+                                     save on md5sum computation.
+        
+        --localcache_dir CACHEDIR    directory in which to store 
+                                     local_md5_cache.json.gz, default: 
+                                     os.path.join(os.environ.get('HOME'), '.s3sync') 
+        
+        --localcache_fname FILENAME  file name to use for local cache.  Use this 
+                                     arg to to explicity specify cache name or use 
+                                     an existing cache file.
+        
+        --interval INTERVAL          enter any number greater than 0 to start 
+                                     autosync mode, program will sync every 
+                                     interval (min)
+        
+        --log LOGLEVEL               set the logger level (threshold), available 
+                                     options include DEBUG, INFO, WARNING, ERROR, 
+                                     or CRITICAL. [default: INFO]
+        
+        --log_dir LOGDIR             file path to directory in which to store the 
+                                     logs. No log files are created if this option
+                                     is ommited.
+        -h --help                    show this screen.
+
 ```
 
 ### grab the container
