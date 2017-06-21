@@ -143,7 +143,8 @@ class S3SyncUtility():
                 hash_md5.update(c)
                 return hash_md5.hexdigest() + '-' + str(blockcount)
         else:
-            return ''
+            ## md5sum dev/null
+            return "d41d8cd98f00b204e9800998ecf8427e"
 
     def dzip_meta(self, key, md5sum = False):
         """
@@ -372,9 +373,8 @@ class SmartS3Sync():
         """
         
         """
-        self.logger.debug('intializing localcache')
         if localcache and not localcache_dir or localcache and not os.path.exists(localcache_dir):
-            
+            self.logger.debug('intializing localcache')            
             localcache_dir = os.path.join(os.environ.get('HOME'), '.s3sync/')
             self.logger.warning('local cache directory not found using '
                                 + 'default --> ' + localcache_dir)
@@ -671,7 +671,13 @@ class SmartS3Sync():
             a = v['ETag']
             try:
                 b = matches[k]['ETag'].replace('"', '')
-                self.logger.debug('match found s3: ' + b + ' local: ' + a + ' path: ' + v['local'])
+                if a == b:
+                    self.logger.debug('match found s3: ' + b + ' local: ' + a + ' path: ' + v['local'])
+                else:
+                    if needs_sync:
+                        needs_sync[k] = v
+                    else:
+                        needs_sync = OrderedDict({k:v})
             except (KeyError, TypeError) as e:
                 self.logger.debug(v['local'] + ':'+ a + " needs upload")
                 if needs_sync:
@@ -689,9 +695,7 @@ class SmartS3Sync():
         local_file_dict = {} 
         
         key = self.s3path.split('/', 1)[1] + self.local.rsplit('/', 1)[1]
-        
-        local_file_dict[key] = util.dzip_meta(key = self.local, md5sum = False)
-        
+         
         if force:
             local_file_dict[key] = util.dzip_meta(key = self.local, md5sum = True)
             ## force an upload of all files
@@ -701,8 +705,11 @@ class SmartS3Sync():
         
         else:
             if self.localcache:
+                local_file_dict[key] = util.dzip_meta(key = self.local, md5sum = False)
                 self.logger.info('checking local cache...')
                 local_file_dict = self.check_localcache(local_file_dict) 
+            else:
+                local_file_dict[key] = util.dzip_meta(key = self.local, md5sum = True)
 
             self.logger.debug('paginate (query) bucket')
             matches = self.query(key, local_file_dict)
