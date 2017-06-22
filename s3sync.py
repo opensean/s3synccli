@@ -329,28 +329,19 @@ class SmartS3Sync():
             ## use profile names passed in args, looks for .aws config file
             session = boto3.Session(profile_name = profile)
             if session:
-                self.s3cl = boto3.client('s3')
-                self.s3rc = boto3.resource('s3')
+                self.s3cl = session.client('s3')
+                self.s3rc = session.resource('s3')
                 self.logger.debug('using ' + profile + ' profile in '
                                   + '.aws/config and .aws/credentials')
                 return session
-        elif os.environ.get('AWS_ACCESS_KEY_ID') and os.environ.get('AWS_SECRET_ACCESS_KEY') and os.environ.get('AWS_DEFAULT_REGION'):
-            ## use environment variables
-            session = boto3.Session(aws_access_key_id = os.environ.get('AWS_ACCESS_KEY_ID'),
-                                     aws_secret_access_key = os.environ.get('AWS_SECRET_ACCESS_KEY'),
-                                     region_name = os.environ.get('AWS_DEFAULT_REGION'))
-            if session:
-                ## only intialize client and resource if valid session is established
-                self.s3cl = boto3.client('s3')
-                self.s3rc = boto3.resource('s3')
-                self.logger.debug('using environment variables for aws credentials')
-                return session
+        
+        ## boto3 by default will then check for environment variables and 
+        ## then check the ~/.aws/config file
 
-        ## use 'default' in .aws config file
         session = boto3.Session() 
         if session:
-            self.s3cl = boto3.client('s3')
-            self.s3rc = boto3.resource('s3')
+            self.s3cl = session.client('s3')
+            self.s3rc = session.resource('s3')
             self.logger.debug('using default profile in .aws/config and '
                                   + '.aws/credentials')
             return session
