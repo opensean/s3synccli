@@ -137,6 +137,8 @@ mounted here, ```-v /path/to/local/.aws:/root/.aws```
 
 #### using environment variables
 
+
+#### IAM credentials
 AWS credentials can be passed to the container as environment variables using a
 .env file with the following format:
 
@@ -150,6 +152,14 @@ The .env file uses the convention VAR=varvalue.  The .env file can be passed
 to the container at run time using the ```--env-file``` docker run arg.  
 For example, ```--env-file /path/to/.env```
 
+Boto3 is the workhorse of s3synccli and supports the use of many different 
+environment variables which can be referenced here:
+
+http://boto3.readthedocs.io/en/latest/guide/configuration.html
+
+#### assume role provider
+
+**TO DO**
 
 ### run container as an executable
 
