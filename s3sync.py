@@ -775,6 +775,9 @@ class SmartS3Sync():
         
         if force:
             ## force an upload of all files
+            
+            for k,v in s3LocalDirAndFileKeys.items():
+                s3LocalDirAndFileKeys[k]['ETag'] = utility.md5(s3LocalDirAndFileKeys[k]['local'])
             needs_sync = s3LocalDirAndFileKeys
             self.logger.warning('using force, ignoring local cache and s3 '
                                 'bucket contents, uploading all files')
@@ -805,7 +808,7 @@ class SmartS3Sync():
                 m = magic.open(magic.MAGIC_NONE)
                 m_result = m.load()
                 meta['ContentType'] = m.file(v['local']).split(';')[0]
-
+                
                 ## copy v becuase intact dict is needed to verify sync
                 meta['Metadata'] = v.copy()
 
