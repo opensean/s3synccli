@@ -1,4 +1,5 @@
 __pycache__/
 .nfs00000000005703430000000e
 *.pyc
-.env
+private.env
+cst-compose.yml

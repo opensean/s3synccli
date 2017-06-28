@@ -18,5 +18,5 @@ RUN chmod -R o+rwx /s3sync/
 
 WORKDIR /s3sync
 
-ENTRYPOINT ["python3", "s3sync.py", "--localcache", "--localcache_dir", ".s3sync", "data"]
+ENTRYPOINT ["python3", "s3sync.py", "--localcache", "--localcache-dir", ".s3sync", "data"]
 CMD []   

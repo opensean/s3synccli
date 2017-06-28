@@ -19,13 +19,13 @@
         - for files use "mode":"33204"
     
     Usage:
-        s3sync <localdir> <s3path> [--metadata METADATA] [--meta_dir_mode METADIR]
-                                   [--meta_file_mode METAFILE] [--uid UID] 
+        s3sync <localdir> <s3path> [--metadata METADATA] [--meta-dir-mode METADIR]
+                                   [--meta-file-mode METAFILE] [--uid UID] 
                                    [--gid GID] [--profile PROFILE] [--localcache] 
-                                   [--localcache_dir CACHEDIR] 
-                                   [--localcache_fname FILENAME] 
+                                   [--localcache-dir CACHEDIR] 
+                                   [--localcache-fname FILENAME] 
                                    [--interval INTERVAL] [--force]
-                                   [--log LOGLEVEL] [--log_dir LOGDIR]
+                                   [--log LOGLEVEL] [--log-dir LOGDIR]
         s3sync -h | --help 
     
     Options: 
@@ -39,10 +39,10 @@
         --metadata METADATA          metadata in json format 
                                      e.g. '{"uid":"6812", "gid":"6812"}'
         
-        --meta_dir_mode METADIR      mode to use for directories in metadata if 
+        --meta-dir-mode METADIR      mode to use for directories in metadata if 
                                      none is found locally [default: 509]
         
-        --meta_file_mode METAFILE    mode to use for files in metadata if none if 
+        --meta-file-mode METAFILE    mode to use for files in metadata if none if 
                                      found locally [default: 33204]
         
         --profile PROFILE            aws profile name 
@@ -56,11 +56,11 @@
         --localcache                 use local data stored in --localcache_dir to 
                                      save on md5sum computation.
         
-        --localcache_dir CACHEDIR    directory in which to store 
+        --localcache-dir CACHEDIR    directory in which to store 
                                      local_md5_cache.json.gz, default: 
                                      os.path.join(os.environ.get('HOME'), '.s3sync') 
         
-        --localcache_fname FILENAME  file name to use for local cache.  Use this 
+        --localcache-fname FILENAME  file name to use for local cache.  Use this 
                                      arg to to explicity specify cache name or use 
                                      an existing cache file.
         
@@ -72,7 +72,7 @@
                                      options include DEBUG, INFO, WARNING, ERROR, 
                                      or CRITICAL. [default: INFO]
         
-        --log_dir LOGDIR             file path to directory in which to store the 
+        --log-dir LOGDIR             file path to directory in which to store the 
                                      logs. No log files are created if this option
                                      is ommited.
         -h --help                    show this screen.
@@ -112,8 +112,10 @@ arg.  For example, ```-v /path/to/local/cache:/s3sync/.s3sync```.
 directory mounted to ```/s3sync/data``` and read/write permissions for the 
 directory mounted to ```/s3sync/.s3sync```.  For instance, the container will 
 encounter permission errors when trying to read from an NFS due to root 
-squashing.  To avoid permission errors run the container with a UID using the 
-```-u``` docker run arg.  For example, ```-u 1000```.
+squashing.  To avoid permission errors run the container with a UID and GID 
+using the ```-u``` docker run arg.  For example, ```-u 1000:1000```.
+It is important to pass both a UID and GID otherwise any files written by the 
+container may have the incorrect permissions.
 
 ```/s3sync/logs```
 
@@ -166,7 +168,7 @@ http://boto3.readthedocs.io/en/latest/guide/configuration.html
 Put everything together and run the container as an exectuble.  For example,
 
 ```
-    $ docker run --rm --env-file /path/to/env/.env -u 1000 \
+    $ docker run --rm --env-file /path/to/env/.env -u 1000:1000 \
                  -v /path/to/local/dir/:/s3sync/data \
                  -v /path/to/local/cache:/s3sync/.s3sync \
                  opensean/s3synccli:latest \
@@ -185,7 +187,7 @@ is running.  Use the ```-d``` docker run arg to run the container in detached
 mode.
 
 ```
-    $ docker run --rm --env-file /path/to/env/.env -u 1000 \
+    $ docker run --rm --env-file /path/to/env/.env -u 1000:1000 \
                  -v /path/to/local/dir/:/s3sync/data \
                  -v /path/to/local/cache:/s3sync/.s3sync \
                  opensean/s3synccli:latest \
@@ -200,7 +202,7 @@ code directly by overiding the container entrypoint.  For example,
 
 ```
    $ docker run -it --rm --entrypoint bash --env-file /path/to/env/.env \ 
-                -u 1000 \
+                -u 1000:1000 \
                 -v /path/to/local/dir/:/s3sync/data \
                 -v /path/to/local/cache:/s3sync/.s3sync \
                 opensean/s3synccli:latest \
@@ -211,37 +213,37 @@ code directly by overiding the container entrypoint.  For example,
 Once the shell session is active one can run the python code directly.
 
 ```
-   $ python3 s3sync.py data s3bucket/path/to/dir/ --localcache --localcache_dir .s3sync 
+   $ python3 s3sync.py data s3bucket/path/to/dir/ --localcache --localcache-dir .s3sync 
 ```
 
 ### logging
 
 s3synccli allows for the customization of logging behavior using the 
-```--log``` and ```--log_dir``` args.  At build time the container
-creates the directory ```/s3sync/logs``` for use as the 
-```--logs_dir``` arg when logs files are required.  The following is an example
-running the container as an executable with the logging threshold set to 
+```--log``` and ```--log-dir``` args.  At build time the container
+creates the directory ```/s3sync/logs``` for use with the 
+```--logs-dir LOGDIR``` arg when logs files are required.  The following is an
+example running the container as an executable with the logging threshold set to 
 ```DEBUG``` and a directory to store the logs files generated.
 
 ```
     $ docker run --rm --env-file /path/to/env/.env \
-                 -u 1000 \
+                 -u 1000:1000 \
                  -v /path/to/local/dir/:/s3sync/data \
                  -v /path/to/local/cache:/s3sync/.s3sync \
                  -v /path/to/local/logs:/s3sync/logs \
                  opensean/s3synccli:latest \
                  s3bucket/path/to/dir/ \
                  --log DEBUG \
-                 --log_dir /s3sync/logs
+                 --log-dir /s3sync/logs
 ```
 
-**Note:** if the ```--log_dir``` arg is ommited no log files are generated but
+**Note:** if the ```--log-dir``` arg is ommited no log files are generated but
 one can still customize the logging output to the console by setting the 
 ```--log``` arg.  For example,
 
 ```
     $ docker run --rm --env-file /path/to/env/.env \
-                 -u 1000 \
+                 -u 1000:1000 \
                  -v /path/to/local/dir/:/s3sync/data \
                  -v /path/to/local/cache:/s3sync/.s3sync \
                  -v /path/to/local/logs:/s3sync/logs \
@@ -251,10 +253,60 @@ one can still customize the logging output to the console by setting the
 
 ```
 
-### Future
+### docker-compose
 
-- docker compose
-    - use a fleet of containers to sync multiple directories
-    - easier to run
-    - all args contained within docker-compose.yml
+The following are the contents of the ```docker-compose.yml``` file contained 
+in this repository that demonstrates an example of syncing the same local 
+directory to multiple buckets using docker-compose.  A docker-compose.yml can 
+be configure to accomplish scenarios such as the one show below, syncing 
+multiple directories to (different or same) bucket, etc...
 
+Variable substitution and environment variables can be shared with the 
+container by specifying an env_file as shown in the example below:
+
+*docker-compose.yml*
+
+```
+    version: '3'
+    services:
+        s3sync00:
+                env_file: example.env
+                image: opensean/s3synccli:latest
+                container_name: s3sync00
+                command: example-s3-00-buc/home/docs --interval 5 --log-dir /s3sync/logs
+                volumes:
+                        - /local/path/to/docs:/s3sync/data
+                        - /local/path/to/logs:/s3sync/logs
+                        - /local/path/to/.s3sync:/s3sync/.s3sync
+                environment:
+                        - AWS_ACCESS_KEY_ID
+                        - AWS_SECRET_ACCESS_KEY
+                        - AWS_DEFAULT_REGION
+                user: $MY_USER:$MY_GROUP
+
+        s3sync01:
+                env_file: example.env
+                image: opensean/s3synccli:latest
+                container_name: s3sync01
+                command: example-s3-01-buc/dir1/docs --interval 5 --log-dir /s3sync/logs
+                volumes:
+                        - /local/path/to/docs:/s3sync/data
+                        - /local/path/to/logs:/s3sync/logs
+                        - /local/path/to/.s3sync:/s3sync/.s3sync
+                environment:
+                        - AWS_ACCESS_KEY_ID
+                        - AWS_SECRET_ACCESS_KEY
+                        - AWS_DEFAULT_REGION
+                user: $MY_USER:$MY_GROUP
+
+```
+
+*example.env*
+
+```
+    AWS_ACCESS_KEY_ID=youraccesskey
+    AWS_SECRET_ACCESS_KEY=yoursecretaccesskey
+    AWS_DEFAULT_REGION=defaultregion(e.g. us-east-1)
+    MY_USER=1000
+    MY_GROUP=1000
+```

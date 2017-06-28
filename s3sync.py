@@ -17,13 +17,13 @@ when in doubt:
     - for files use "mode":"33204"
 
 Usage:
-    s3sync <localdir> <s3path> [--metadata METADATA] [--meta_dir_mode METADIR]
-                               [--meta_file_mode METAFILE] [--uid UID] 
+    s3sync <localdir> <s3path> [--metadata METADATA] [--meta-dir-mode METADIR]
+                               [--meta-file-mode METAFILE] [--uid UID] 
                                [--gid GID] [--profile PROFILE] [--localcache] 
-                               [--localcache_dir CACHEDIR] 
-                               [--localcache_fname FILENAME] 
+                               [--localcache-dir CACHEDIR] 
+                               [--localcache-fname FILENAME] 
                                [--interval INTERVAL] [--force]
-                               [--log LOGLEVEL] [--log_dir LOGDIR]
+                               [--log LOGLEVEL] [--log-dir LOGDIR]
     s3sync -h | --help 
 
 Options: 
@@ -37,10 +37,10 @@ Options:
     --metadata METADATA          metadata in json format 
                                  e.g. '{"uid":"6812", "gid":"6812"}'
     
-    --meta_dir_mode METADIR      mode to use for directories in metadata if 
+    --meta-dir-mode METADIR      mode to use for directories in metadata if 
                                  none is found locally [default: 509]
     
-    --meta_file_mode METAFILE    mode to use for files in metadata if none if 
+    --meta-file-mode METAFILE    mode to use for files in metadata if none if 
                                  found locally [default: 33204]
     
     --profile PROFILE            aws profile name 
@@ -54,11 +54,11 @@ Options:
     --localcache                 use local data stored in --localcache_dir to 
                                  save on md5sum computation.
     
-    --localcache_dir CACHEDIR    directory in which to store 
+    --localcache-dir CACHEDIR    directory in which to store 
                                  local_md5_cache.json.gz, default: 
                                  os.path.join(os.environ.get('HOME'), '.s3sync') 
     
-    --localcache_fname FILENAME  file name to use for local cache.  Use this 
+    --localcache-fname FILENAME  file name to use for local cache.  Use this 
                                  arg to to explicity specify cache name or use 
                                  an existing cache file.
     
@@ -70,7 +70,7 @@ Options:
                                  options include DEBUG, INFO, WARNING, ERROR, 
                                  or CRITICAL. [default: INFO]
     
-    --log_dir LOGDIR             file path to directory in which to store the 
+    --log-dir LOGDIR             file path to directory in which to store the 
                                  logs. No log files are created if this option
                                  is ommited.
     -h --help                    show this screen.
@@ -912,18 +912,18 @@ def main():
     module_logger = logging.getLogger()
     module_logger.setLevel(numeric_level)
     
-    if options['--log_dir']:
+    if options['--log-dir']:
         ## create file handler
         if options['--interval']:
             dateTag = datetime.datetime.now().strftime("%Y-%b-%d")
-            fh = TimedRotatingFileHandler(options['--log_dir'] 
+            fh = TimedRotatingFileHandler(options['--log-dir'] 
                                     + "/%s_s3sync.log" % dateTag, 
                                     when = 'M', 
                                     interval =  float(options['--interval']))
         
         else:
             dateTag = datetime.datetime.now().strftime("%Y-%b-%d_%H-%M-%S")
-            fh = logging.FileHandler(options['--log_dir'] 
+            fh = logging.FileHandler(options['--log-dir'] 
                                      + "/%s_s3sync.log" % dateTag)
         
         
@@ -947,13 +947,13 @@ def main():
                         s3path = options['<s3path>'], 
                         metadata = options['--metadata'], 
                         profile = options['--profile'],
-                        meta_dir_mode = options['--meta_dir_mode'],
-                        meta_file_mode = options['--meta_file_mode'],
+                        meta_dir_mode = options['--meta-dir-mode'],
+                        meta_file_mode = options['--meta-file-mode'],
                         uid = options['--uid'],
                         gid = options['--gid'],
                         localcache = options['--localcache'],
-                        localcache_dir = options['--localcache_dir'],
-                        localcache_fname = options['--localcache_fname'],
+                        localcache_dir = options['--localcache-dir'],
+                        localcache_fname = options['--localcache-fname'],
                         log = numeric_level)
 
     s3_sync.sync(interval = options['--interval'], force = options['--force'])
