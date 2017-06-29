@@ -270,16 +270,17 @@ documentation does not explain the difference between an *env_file* and  an
 
 The *.env* can contain variables to be substituted in the compose file itself.  
 The *.env* used is local to where the docker-compose command is run.  For 
-example, if a I run the docker-compose up command in my */home/opensean/* 
-directory, then docker will look for a *.env* file in */home/openseam/*, from 
-what I understand you can't control that behavoir of docker-compose.
+example, if a I run the ```docker-compose up``` command in my */home/opensean/*
+directory, then docker will look for a *.env* file in */home/opensean/*, from 
+what I understand you can't control that behavoir of docker-compose. 
+CAUTION any existing shell environment variables will override the 
+variables specified in the *.env*.
 
 
 The *env_file* key in a docker-compose file allows one to specify environment 
 variables that are shared with the containers environment.  The values are not 
 substituted into a docker-compose file but shared injected directly into the 
-containers environment.  CAUTION any existing shell environment variables my 
-conflict or override the variables specified in the *env_file*.
+container's environment.
 
 
 *docker-compose.yml*
