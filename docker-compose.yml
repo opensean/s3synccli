@@ -9,10 +9,6 @@ services:
                         - /local/path/to/docs:/s3sync/data
                         - /local/path/to/logs:/s3sync/logs
                         - /local/path/to/.s3sync:/s3sync/.s3sync
-                environment:
-                        - AWS_ACCESS_KEY_ID
-                        - AWS_SECRET_ACCESS_KEY
-                        - AWS_DEFAULT_REGION
                 user: $MY_USER:$MY_GROUP
 
         s3sync01:
@@ -24,9 +20,5 @@ services:
                         - /local/path/to/docs:/s3sync/data
                         - /local/path/to/logs:/s3sync/logs
                         - /local/path/to/.s3sync:/s3sync/.s3sync
-                environment:
-                        - AWS_ACCESS_KEY_ID
-                        - AWS_SECRET_ACCESS_KEY
-                        - AWS_DEFAULT_REGION
                 user: $MY_USER:$MY_GROUP
 

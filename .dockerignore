@@ -3,7 +3,6 @@
 __pycache__/
 Dockerfile
 .dockerignore
-private.env
+.env
 example.env
-cst-compose.yml
 docker-compose.yml

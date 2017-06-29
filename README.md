@@ -261,8 +261,26 @@ directory to multiple buckets using docker-compose.  A docker-compose.yml can
 be configure to accomplish scenarios such as the one show below, syncing 
 multiple directories to (different or same) bucket, etc...
 
-Variable substitution and environment variables can be shared with the 
-container by specifying an env_file as shown in the example below:
+
+#### environment varialbes
+
+Environment variables are confusing when it comes to docker-compose and the 
+documentation does not explain the difference between an *env_file* and  an 
+*.env* file well.  
+
+The *.env* can contain variables to be substituted in the compose file itself.  
+The *.env* used is local to where the docker-compose command is run.  For 
+example, if a I run the docker-compose up command in my */home/opensean/* 
+directory, then docker will look for a *.env* file in */home/openseam/*, from 
+what I understand you can't control that behavoir of docker-compose.
+
+
+The *env_file* key in a docker-compose file allows one to specify environment 
+variables that are shared with the containers environment.  The values are not 
+substituted into a docker-compose file but shared injected directly into the 
+containers environment.  CAUTION any existing shell environment variables my 
+conflict or override the variables specified in the *env_file*.
+
 
 *docker-compose.yml*
 
@@ -278,10 +296,7 @@ container by specifying an env_file as shown in the example below:
                         - /local/path/to/docs:/s3sync/data
                         - /local/path/to/logs:/s3sync/logs
                         - /local/path/to/.s3sync:/s3sync/.s3sync
-                environment:
-                        - AWS_ACCESS_KEY_ID
-                        - AWS_SECRET_ACCESS_KEY
-                        - AWS_DEFAULT_REGION
+               
                 user: $MY_USER:$MY_GROUP
 
         s3sync01:
@@ -293,12 +308,15 @@ container by specifying an env_file as shown in the example below:
                         - /local/path/to/docs:/s3sync/data
                         - /local/path/to/logs:/s3sync/logs
                         - /local/path/to/.s3sync:/s3sync/.s3sync
-                environment:
-                        - AWS_ACCESS_KEY_ID
-                        - AWS_SECRET_ACCESS_KEY
-                        - AWS_DEFAULT_REGION
+               
                 user: $MY_USER:$MY_GROUP
 
+```
+*.env*
+
+```
+    MY_USER=1000
+    MY_GROUP=1000
 ```
 
 *example.env*
@@ -307,6 +325,4 @@ container by specifying an env_file as shown in the example below:
     AWS_ACCESS_KEY_ID=youraccesskey
     AWS_SECRET_ACCESS_KEY=yoursecretaccesskey
     AWS_DEFAULT_REGION=defaultregion(e.g. us-east-1)
-    MY_USER=1000
-    MY_GROUP=1000
 ```
