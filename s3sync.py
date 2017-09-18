@@ -17,19 +17,12 @@ when in doubt:
     - for files use "mode":"33204"
 
 Usage:
-    s3sync <localdir> <s3path> [--metadata METADATA] [--meta-dir-mode METADIR]
-                               [--meta-file-mode METAFILE] [--uid UID] 
-                               [--gid GID] [--profile PROFILE] [--localcache] 
-                               [--localcache-dir CACHEDIR] 
-                               [--localcache-fname FILENAME] 
-                               [--interval INTERVAL] [--force]
-                               [--log LOGLEVEL] [--log-dir LOGDIR]
-    s3sync -h | --help 
+    s3sync.py <path> <path> [options]
+    s3sync.py <path> <path> [options]
+    s3sync.py -h | --help 
 
 Options: 
-    <localdir>                   local directory file path
-    
-    <s3path>                     s3 key, e.g. cst-compbio-research-00-buc/
+    <path>                       a local path or s3 bucket path
 
     --force                      force upload even if local files have not 
                                  changed, ignore md5 cache.
@@ -264,11 +257,13 @@ class SmartS3Sync():
                  meta_file_mode = "33204", uid = None, gid = None,
                  localcache = False,
                  localcache_dir = None,
-                 localcache_fname = None, 
+                 localcache_fname = None,
+                 fromS3 = False,
                  log = logging.INFO, library = logging.CRITICAL):
         
         self.local = local
         self.s3path = s3path
+        self.fromS3 = fromS3
         self.bucket = s3path.split('/', 1)[0]
         self.walk = DirectoryWalk(local)
         self.uid = uid
@@ -893,14 +888,8 @@ class SmartS3Sync():
                     time.sleep(1)
 
 
-def main():
-    """
-    Command line arguments.
-    """  
-    
-    ## command line args
-    options = docopt(__doc__)
-    
+def main(options):
+   
     ## setup s3sync logger
     # command line argument. Convert to upper case to allow the user to
     # specify --log=DEBUG or --log=debug
@@ -943,8 +932,24 @@ def main():
     
     module_logger.addHandler(console)
 
-    s3_sync = SmartS3Sync(local = options['<localdir>'], 
-                        s3path = options['<s3path>'], 
+    local = ''
+    s3path = ''
+    fromS3 = False
+    for path in options['<path>']:
+        if 's3://' == path[0:5]:
+            s3path = path
+            if options['<path>'][0] == s3path:
+                fromS3 = True
+        else:
+            local = path
+
+    if len(s3path[5:]) == 0:
+        raise RuntimeError('s3 path not valid format')
+
+
+
+    s3_sync = SmartS3Sync(local = local,
+                        s3path = s3path, 
                         metadata = options['--metadata'], 
                         profile = options['--profile'],
                         meta_dir_mode = options['--meta-dir-mode'],
@@ -954,13 +959,19 @@ def main():
                         localcache = options['--localcache'],
                         localcache_dir = options['--localcache-dir'],
                         localcache_fname = options['--localcache-fname'],
-                        log = numeric_level)
+                        log = numeric_level,
+                        fromS3 = fromS3)
 
-    s3_sync.sync(interval = options['--interval'], force = options['--force'])
+#    s3_sync.sync(interval = options['--interval'], force = options['--force'])
 
 if __name__== "__main__":
-
+    """
+    Command line arguments.
+    """  
     
-    main()
+    ## command line args
+    options = docopt(__doc__)
+    
+    main(options)
     
 
