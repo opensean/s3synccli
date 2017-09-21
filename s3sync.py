@@ -682,7 +682,7 @@ class SmartS3Sync():
 
     def sync_file_toS3(self, force = False):
         """
-        Sync a local file with an s3 bucket.
+        Sync a local file with to an s3 bucket.
  
         """
         util = S3SyncUtility()
@@ -749,7 +749,7 @@ class SmartS3Sync():
 
     def sync_dir_toS3(self, force = False):
         """
-        Sync a local directory with an s3 bucket.
+        Sync a local directory with to an s3 bucket.
 
         """
         utility = S3SyncUtility()
@@ -896,17 +896,7 @@ class SmartS3Sync():
             ## complete sync
             for k, v in needs_sync.items():
                 v['local'] = os.path.join(self.local, k[len(self.s3path[len(self.bucket) + 1:]):])
-                meta = {}
-                ## copy v becuase intact dict is needed to verify sync
-                meta['Metadata'] = v.copy()
-
-
-                ## check for uid & gid
-                if self.uid:
-                    meta['Metadata']['uid'] = self.uid
-                if self.gid:
-                    meta['Metadata']['gid'] = self.gid
-                
+               
                 if not k.endswith('/'):
                     try:
                         self.logger.info('making local directory ' 
@@ -925,7 +915,6 @@ class SmartS3Sync():
                                     Bucket = self.bucket, 
                                     Key = k,
                                     Fileobj= f)
-                            sys.stderr.write('\n')
 
                         except ClientError as e:
                             ## Access Denied, s3 permission error
@@ -939,7 +928,52 @@ class SmartS3Sync():
  
     
     def sync_file_fromS3(self, force = False):
-        pass
+        """
+        Sync a file from an s3 bucket.
+ 
+        """
+        util = S3SyncUtility()
+        local_file_dict = {} 
+        
+        key = self.s3path.split('/', 1)[1] 
+         
+        if force:
+            needs_sync = self.queryS3(key, return_all_objects = True, fromS3 = True)
+            self.logger.warning('using force, ignoring local cache and s3 '
+                                'bucket contents, downloading all files')
+        
+        else:
+            if self.localcache:
+                local_file_dict[key] = util.dzip_meta(key = self.local, md5sum = False)
+                self.logger.info('checking local cache...')
+                local_file_dict = self.check_localcache(local_file_dict) 
+            elif os.path.isfile(self.local):
+                local_file_dict[key] = util.dzip_meta(key = self.local, md5sum = True)
+            s3_content = self.s3cl.head_object(Bucket = self.bucket, Key = key)
+           
+            matches = OrderedDict({key:s3_content})
+            
+            self.logger.debug('comparing etags (md5sum)')
+            needs_sync = self.compare_etag(matches, local_file_dict, fromS3 = True)
+        
+        if needs_sync:
+
+            with open(self.local, 'wb') as f:
+                try:
+                    self.logger.info("download: " + key + " to " + self.local)
+
+                    self.s3cl.download_fileobj(Bucket = self.bucket, 
+                                               Key = key,
+                                               Fileobj = f)
+                    
+                except ClientError as e:
+                    self.logger.exception('download failed')
+
+            self.verify_sync(needs_sync)
+        else:
+            self.logger.info(self.local + ' is up to date.')
+
+       
 
     def verify_sync(self, just_synced, fromS3 = False):
         """
