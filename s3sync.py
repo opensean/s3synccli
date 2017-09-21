@@ -258,12 +258,10 @@ class SmartS3Sync():
                  localcache = False,
                  localcache_dir = None,
                  localcache_fname = None,
-                 fromS3 = False,
                  log = logging.INFO, library = logging.CRITICAL):
         
         self.local = local
         self.s3path = s3path
-        self.fromS3 = fromS3
         self.bucket = s3path.split('/', 1)[0]
         self.walk = DirectoryWalk(local)
         self.uid = uid
@@ -588,7 +586,7 @@ class SmartS3Sync():
                     self.logger.exception("exiting...")
                     sys.exit()
 
-    def query(self, prefix, search):
+    def queryS3(self, prefix, search = OrderedDict({}), return_all_objects = True):
         """
         Query an s3 bucket using paginator and list-objects-v2.
 
@@ -617,62 +615,72 @@ class SmartS3Sync():
             ## look for keys in object first, iterate until all pages are 
             ## exhausted or all keys have been found
             for page in page_iterator:
-                for k,v in search.items():
+                if return_all_objects:
                     if matches:
-                        matches.update({k:item for item in page['Contents'] if item['Key'] == k})
+                        matches.update({item['Key']:item for item in page['Contents']})
                     else:
-                        matches = OrderedDict({k:item for item in page['Contents'] if item['Key'] == k})
-                if len(matches) == len(search):
-                    ## no need to continue page iteration if we have found 
-                    ## all keys
+                        matches = OrderedDict({item['Key']:item for item in page['Contents']})                    
+                else:
+                    for k,v in search.items():
+                        if matches:
+                            matches.update({k:item for item in page['Contents'] if item['Key'] == k})
+                        else:
+                            matches = OrderedDict({k:item for item in page['Contents'] if item['Key'] == k})
+                    if len(matches) == len(search):
+                        ## no need to continue page iteration if we have found 
+                        ## all keys
 
-                    return matches
+                        return matches
         except KeyError as e:
             self.logger.info(prefix + ' key does not exist yet')
 
         return matches
 
-    def compare_etag(self, s3localfilekeys, matches):
+    def compare_etag(self, source, destination, fromS3 = False):
         """
         Compare local etag(md5sum) values with s3 etag values.
 
         Args:
-            s3localfilekeys (OrderedDict): local filepaths converted to s3
-                                           s3 keys.  Local metadata is stored.
+            source (OrderedDict): s3 keys with metadata.
             
-            matches (OrderedDict): s3 object keys with metadata.
+            destination (OrderedDict): s3 keys with metadata.
 
         Returns:
-            needs_sync (OrderedDict): files that need upload because of Etag difference.
+            needs_sync (OrderedDict): files that need upload/dowload because 
+            of Etag difference.
             
             OrderedDict structure for args and return:
             
             {'s3key/path': {'uid':'1000', 'Etag':'###', 'mode':'33204', etc...'}}
 
+            this dictionary will include a 'local' key that has the file path 
+            to a local file before conversion to an s3 key for eTag lookup.
         """
         ## compare ETags to determine which files need to be uploaded
         needs_sync = None
-        
-        for k,v in s3localfilekeys.items():
-            a = v['ETag']
+        for k,v in source.items():
+            a = v['ETag'].replace('"', '')  ## handles formatting when result is from s3
             try:
-                b = matches[k]['ETag'].replace('"', '')
-                if a == b:
-                    self.logger.debug('match found s3: ' + b + ' local: ' + a + ' path: ' + v['local'])
+                b = destination[k]['ETag'].replace('"', '') ## handles formatting when result is from s3
+                if a == b:    
+                    self.logger.debug('match found destination: ' + b + ' source: ' + a + ' s3path: ' + k)
                 else:
                     if needs_sync:
                         needs_sync[k] = v
                     else:
                         needs_sync = OrderedDict({k:v})
             except (KeyError, TypeError) as e:
-                self.logger.debug(v['local'] + ':'+ a + " needs upload")
+                if fromS3:
+                    self.logger.debug(k + ':' + a + " needs download")
+                else:
+                    self.logger.debug(v['local'] + ':'+ a + " needs upload")
                 if needs_sync:
                     needs_sync[k] = v
                 else:
                     needs_sync = OrderedDict({k:v})
         return needs_sync
 
-    def sync_file(self, force = False):
+    def sync_file_toS3(self, force = False):
         """
         Sync a local file with an s3 bucket.
  
@@ -697,8 +705,8 @@ class SmartS3Sync():
             else:
                 local_file_dict[key] = util.dzip_meta(key = self.local, md5sum = True)
 
-            self.logger.debug('paginate (query) bucket')
-            matches = self.query(key, local_file_dict)
+            self.logger.debug('paginate (queryS3) bucket')
+            matches = self.queryS3(key, local_file_dict)
             
             self.logger.debug('comparing etags (md5sum)')
             needs_sync = self.compare_etag(local_file_dict, matches)
@@ -739,7 +747,7 @@ class SmartS3Sync():
         else:
             self.logger.info(self.local + ' is up to date.')
 
-    def sync_dir(self, force = False):
+    def sync_dir_toS3(self, force = False):
         """
         Sync a local directory with an s3 bucket.
 
@@ -776,9 +784,9 @@ class SmartS3Sync():
                for k,v in s3LocalDirAndFileKeys.items():
                    s3LocalDirAndFileKeys[k]['ETag'] = utility.md5(s3LocalDirAndFileKeys[k]['local'])
             
-            self.logger.debug('paginate (query) bucket')
+            self.logger.debug('paginate (queryS3) bucket')
             ## paginate bucket
-            matches = self.query(self.s3path[len(self.bucket) + 1:], 
+            matches = self.queryS3(self.s3path[len(self.bucket) + 1:], 
                                  s3LocalDirAndFileKeys)
 
             self.logger.debug('comparing etags (md5sum)')
@@ -835,7 +843,105 @@ class SmartS3Sync():
         else:
             self.logger.info('S3 bucket is up to date')
    
-    def verify_sync(self, just_synced):
+
+    def sync_dir_fromS3(self, force = False):
+        if force:
+            needs_sync = self.queryS3(self.s3path[len(self.bucket) + 1:], 
+                                 return_all_objects = True)            
+            self.logger.warning('using force, ignoring local cache and will '
+                                + 'download all objects from bucket path')
+        else:
+
+            utility = S3SyncUtility()
+       
+            s3localdirkeys = None
+            s3localfilekeys = OrderedDict({})
+
+            if os.path.isdir(self.local):
+                self.logger.debug('found existing local directory with name "' + self.local + '"'
+                                  + ' checking for existing files')
+                ## local dirs converted to s3keys
+                s3localdirkeys = self.walk.toS3Keys(self.walk.root, self.s3path)
+                ## local files converted to s3keys
+                s3localfilekeys = self.walk.toS3Keys(self.walk.file, self.s3path,
+                                                 isdir = False)
+            if s3localdirkeys:
+                s3LocalDirAndFileKeys = s3localdirkeys
+            else:
+                s3LocalDirAndFileKeys = OrderedDict({})
+            
+            for k,v in s3localfilekeys.items():
+                self.logger.debug('updating dict with s3 keys ' + k + ':' + str(v))
+                s3LocalDirAndFileKeys.update({k:v})
+        
+            if self.localcache:
+                self.logger.info('checking local cache...')
+                s3LocalDirAndFileKeys = self.check_localcache(s3LocalDirAndFileKeys)
+            else:
+               for k,v in s3LocalDirAndFileKeys.items():
+                   self.logger.debug('not using localcache, calculating md5 sum now for "' + v['local'] + '"')
+                   s3LocalDirAndFileKeys[k]['ETag'] = utility.md5(s3LocalDirAndFileKeys[k]['local'])
+                   self.logger.debug(s3LocalDirAndFileKeys[k]['ETag']) 
+            
+            self.logger.debug('paginate (queryS3) bucket')
+            ## paginate bucket
+            all_s3_objects= self.queryS3(self.s3path[len(self.bucket) + 1:], 
+                                         return_all_objects = True)
+
+            self.logger.debug('comparing etags (md5sum)')
+
+            needs_sync = self.compare_etag(all_s3_objects, s3LocalDirAndFileKeys, fromS3 = True)
+        if needs_sync:
+            
+            ## complete sync
+            for k, v in needs_sync.items():
+                v['local'] = os.path.join(self.local, k[len(self.s3path[len(self.bucket) + 1:]):])
+                meta = {}
+                ## copy v becuase intact dict is needed to verify sync
+                meta['Metadata'] = v.copy()
+
+
+                ## check for uid & gid
+                if self.uid:
+                    meta['Metadata']['uid'] = self.uid
+                if self.gid:
+                    meta['Metadata']['gid'] = self.gid
+                
+                if not k.endswith('/'):
+                    try:
+                        self.logger.info('making local directory ' 
+                             + v['local'].rsplit('/', 1)[0])
+                        os.makedirs(v['local'].rsplit('/', 1)[0])
+                    except FileExistsError as e:
+                        self.logger.info('local directory already exists, skipping...')
+
+                    with open(v['local'], 'wb') as f:
+                        try:
+                            self.logger.info("download: " + k + " to "
+                                             + v['local'])
+                
+                            
+                            self.s3cl.download_fileobj(
+                                    Bucket = self.bucket, 
+                                    Key = k,
+                                    Fileobj= f)
+                            sys.stderr.write('\n')
+
+                        except ClientError as e:
+                            ## Access Denied, s3 permission error
+                            self.logger.exception("exiting")
+                            sys.exit()
+            
+            self.verify_sync(needs_sync, fromS3 = True)
+        else:
+            self.logger.info('local directory "' + self.local + '" is up to date with s3://"'+ self.s3path +'"')
+ 
+ 
+    
+    def sync_file_fromS3(self, force = False):
+        pass
+
+    def verify_sync(self, just_synced, fromS3 = False):
         """
         Verify the completed sync.
 
@@ -849,9 +955,9 @@ class SmartS3Sync():
 
         self.logger.info('verifying sync')
         ## paginate bucket
-        matches = self.query(self.s3path[len(self.bucket) + 1:],
+        matches = self.queryS3(self.s3path[len(self.bucket) + 1:],
                                     just_synced)
-        faulty_syncs = self.compare_etag(just_synced, matches)
+        faulty_syncs = self.compare_etag(just_synced, matches, fromS3 = fromS3)
         
         if faulty_syncs:
             for k,v in faulty_syncs.items():
@@ -859,7 +965,7 @@ class SmartS3Sync():
         else:
             self.logger.info('sync verified')
 
-    def sync(self, interval = None, force = False):
+    def sync(self, interval = None, force = False, fromS3 = False):
         """
         Complete a sync between a local directory or file and an s3 bucket.  
 
@@ -867,17 +973,25 @@ class SmartS3Sync():
             interval (float): sync interval in minutes.
         """
         autosync = True
-        while autosync: 
-            if os.path.isfile(self.local):
-                self.sync_file(force = force)
-
-            elif os.path.isdir(self.local):
-                self.sync_dir(force = force)
-
+        while autosync:
+            if fromS3:
+                self.logger.info('preparing to sync FROM S3')
+                if self.s3path.endswith('/'):
+                    self.sync_dir_fromS3(force = force)
+                else:
+                    self.sync_file_fromS3(force = force)
             else:
-                self.logger.critical(self.local + 'is not a file or a '
-                                     + 'directory!\n')
-                sys.exit()
+                self.logger.info('preparing to sync TO S3')
+                if os.path.isfile(self.local):
+                    self.sync_file_toS3(force = force)
+
+                elif os.path.isdir(self.local):
+                    self.sync_dir_toS3(force = force)
+
+                else:
+                    self.logger.critical(self.local + 'is not a file or a '
+                                         + 'directory!\n')
+                    sys.exit()
             if not interval:
                 autosync = False
             else:
@@ -937,8 +1051,8 @@ def main(options):
     fromS3 = False
     for path in options['<path>']:
         if 's3://' == path[0:5]:
-            s3path = path
-            if options['<path>'][0] == s3path:
+            s3path = path[5:] ## trim the 's3://' we dont need it anymore
+            if options['<path>'][0][5:] == s3path:
                 fromS3 = True
         else:
             local = path
@@ -959,10 +1073,11 @@ def main(options):
                         localcache = options['--localcache'],
                         localcache_dir = options['--localcache-dir'],
                         localcache_fname = options['--localcache-fname'],
-                        log = numeric_level,
-                        fromS3 = fromS3)
+                        log = numeric_level)
 
-#    s3_sync.sync(interval = options['--interval'], force = options['--force'])
+    s3_sync.sync(interval = options['--interval'], 
+                 force = options['--force'],
+                 fromS3 = fromS3)
 
 if __name__== "__main__":
     """
