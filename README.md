@@ -5,84 +5,87 @@
 ### run from source
 
 ```
-    $ git clone https://github.com/opensean/s3synccli.git
-    $ cd s3synccli
-    $ python3 s3sync.py -h
-    Sync local data with S3 while maintaining metadata.  Maintaining metadata is 
-    crucial for working with S3 as a mounted file system via s3fs. 
-    
-    Metadata notes
-    --------------
-    when in doubt:
-    
-        - for directories use "mode":"509"
-        - for files use "mode":"33204"
-    
-    Usage:
-        s3sync <localdir> <s3path> [--metadata METADATA] [--meta-dir-mode METADIR]
-                                   [--meta-file-mode METAFILE] [--uid UID] 
-                                   [--gid GID] [--profile PROFILE] [--localcache] 
-                                   [--localcache-dir CACHEDIR] 
-                                   [--localcache-fname FILENAME] 
-                                   [--interval INTERVAL] [--force]
-                                   [--log LOGLEVEL] [--log-dir LOGDIR]
-        s3sync -h | --help 
-    
-    Options: 
-        <localdir>                   local directory file path
-        
-        <s3path>                     s3 key, e.g. cst-compbio-research-00-buc/
-    
-        --force                      force upload even if local files have not 
-                                     changed, ignore md5 cache.
-        
-        --metadata METADATA          metadata in json format 
-                                     e.g. '{"uid":"6812", "gid":"6812"}'
-        
-        --meta-dir-mode METADIR      mode to use for directories in metadata if 
-                                     none is found locally [default: 509]
-        
-        --meta-file-mode METAFILE    mode to use for files in metadata if none if 
-                                     found locally [default: 33204]
-        
-        --profile PROFILE            aws profile name 
-        
-        --uid UID                    user id that will overide any uid information
-                                     detected for files and directories
-        
-        --gid GID                    group id that will overid any gid information
-                                     detected for files and directories
-        
-        --localcache                 use local data stored in --localcache_dir to 
-                                     save on md5sum computation.
-        
-        --localcache-dir CACHEDIR    directory in which to store 
-                                     local_md5_cache.json.gz, default: 
-                                     os.path.join(os.environ.get('HOME'), '.s3sync') 
-        
-        --localcache-fname FILENAME  file name to use for local cache.  Use this 
-                                     arg to to explicity specify cache name or use 
-                                     an existing cache file.
-        
-        --interval INTERVAL          enter any number greater than 0 to start 
-                                     autosync mode, program will sync every 
-                                     interval (min)
-        
-        --log LOGLEVEL               set the logger level (threshold), available 
-                                     options include DEBUG, INFO, WARNING, ERROR, 
-                                     or CRITICAL. [default: INFO]
-        
-        --log-dir LOGDIR             file path to directory in which to store the 
-                                     logs. No log files are created if this option
-                                     is ommited.
-        -h --help                    show this screen.
+$ git clone https://github.com/opensean/s3synccli.git
+$ cd s3synccli
+$ ./s3sync.py --help
 
+Sync local data with S3 while maintaining metadata.  Maintaining metadata is 
+crucial for working with S3 as a mounted file system via s3fs. 
+
+The order of <path> args determines the direciton of sync.  First, <path> is 
+the source, the second <path> is the destination.  The s3 path must begin with
+the prefix 's3://'.
+
+e.g.
+sync from s3 bucket (download)
+./s3sync.py s3://mybucket/docs /home/myhome/docs --log debug 
+
+sync to s3 bucket (upload)
+./s3sync.py /home/myhome/docs s3://mybucket/docs --log debug 
+
+Metadata notes
+--------------
+when in doubt:
+
+    - for directories use "mode":"509"
+    - for files use "mode":"33204"
+
+Usage:
+    s3sync.py <path> <path> [options]
+    s3sync.py -h | --help 
+
+Options: 
+    <path>                       a local path or s3 bucket path
+
+    --force                      force upload even if local files have not 
+                                 changed, ignore md5 cache.
+    
+    --metadata METADATA          metadata in json format 
+                                 e.g. '{"uid":"6812", "gid":"6812"}'
+    
+    --meta-dir-mode METADIR      mode to use for directories in metadata if 
+                                 none is found locally [default: 509]
+    
+    --meta-file-mode METAFILE    mode to use for files in metadata if none if 
+                                 found locally [default: 33204]
+    
+    --profile PROFILE            aws profile name 
+    
+    --uid UID                    user id that will overide any uid information
+                                 detected for files and directories
+    
+    --gid GID                    group id that will overid any gid information
+                                 detected for files and directories
+    
+    --localcache                 use local data stored in --localcache_dir to 
+                                 save on md5sum computation.
+    
+    --localcache-dir CACHEDIR    directory in which to store 
+                                 local_md5_cache.json.gz, default: 
+                                 os.path.join(os.environ.get('HOME'), '.s3sync') 
+    
+    --localcache-fname FILENAME  file name to use for local cache.  Use this 
+                                 arg to to explicity specify cache name or use 
+                                 an existing cache file.
+    
+    --interval INTERVAL          enter any number greater than 0 to start 
+                                 autosync mode, program will sync every 
+                                 interval (min)
+    
+    --log LOGLEVEL               set the logger level (threshold), available 
+                                 options include DEBUG, INFO, WARNING, ERROR, 
+                                 or CRITICAL. [default: INFO]
+    
+    --log-dir LOGDIR             file path to directory in which to store the 
+                                 logs. No log files are created if this option
+                                 is ommited.
+    -h --help                    show this screen.
 ```
 
 ### grab the container
 
 ```
-    $ docker pull opensean/s3synccli:latest
+    $ docker pull opensean/s3synccli:0.2.0
 ```
 or build the container from source.
 

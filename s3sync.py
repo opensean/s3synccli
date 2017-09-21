@@ -1,13 +1,21 @@
 #!/usr/bin/env python3
 ## Sean Landry, sean.d.landry@gmail.com
-## Description: s3synccli --> sync local directory and or file with an s3 bucket.  
-##              Contains the S3SyncUtility, DirectoryWalk, ProgressPercentage,
-##              and SmartS3Sync() classes.
 
 """
 
 Sync local data with S3 while maintaining metadata.  Maintaining metadata is 
 crucial for working with S3 as a mounted file system via s3fs. 
+
+The order of <path> args determines the direciton of sync.  First, <path> is 
+the source, the second <path> is the destination.  The s3 path must begin with
+the prefix 's3://'.
+
+e.g.
+sync from s3 bucket (download)
+./s3sync.py s3://mybucket/docs /home/myhome/docs --log debug 
+
+sync to s3 bucket (upload)
+./s3sync.py /home/myhome/docs s3://mybucket/docs --log debug 
 
 Metadata notes
 --------------
@@ -17,7 +25,6 @@ when in doubt:
     - for files use "mode":"33204"
 
 Usage:
-    s3sync.py <path> <path> [options]
     s3sync.py <path> <path> [options]
     s3sync.py -h | --help 
 
@@ -70,8 +77,8 @@ Options:
 """ 
 __author__= "Sean Landry"
 __email__= "sean.d.landry@gmail.com"
-__date__= "20june2017"
-__version__= "0.1.0"
+__date__= "21sep2017"
+__version__= "0.2.0"
 
 from docopt import docopt
 import subprocess
