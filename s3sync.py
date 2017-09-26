@@ -687,7 +687,7 @@ class SmartS3Sync():
                     needs_sync = OrderedDict({k:v})
         return needs_sync
 
-    def sync_file_toS3(self, force = False):
+    def sync_file_toS3(self, force = False, show_progress = True):
         """
         Sync a local file with to an s3 bucket.
  
@@ -742,11 +742,15 @@ class SmartS3Sync():
 
                 try:
                     self.logger.info("upload: " + self.local + " to " + key)
-
-                    self.s3cl.upload_fileobj(f, self.bucket, key,
-                                    ExtraArgs = meta,
-                                    Callback = ProgressPercentage(self.local))
-                    sys.stderr.write('\n')
+                    if show_progress:
+                        self.s3cl.upload_fileobj(f, self.bucket, key,
+                                        ExtraArgs = meta,
+                                        Callback = ProgressPercentage(self.local))
+                        sys.stderr.write('\n')
+                    else:
+                        self.s3cl.upload_fileobj(f, self.bucket, key,
+                                        ExtraArgs = meta)
+ 
                 except ClientError as e:
                     self.logger.exception('upload failed')
 
@@ -754,7 +758,7 @@ class SmartS3Sync():
         else:
             self.logger.info(self.local + ' is up to date.')
 
-    def sync_dir_toS3(self, force = False):
+    def sync_dir_toS3(self, force = False, show_progress = True):
         """
         Sync a local directory with to an s3 bucket.
 
@@ -830,10 +834,15 @@ class SmartS3Sync():
                         rm_local_etag = meta['Metadata'].pop('ETag')
                         rm_local_path = meta['Metadata'].pop('local')
                         
-                        self.s3cl.upload_fileobj(f, self.bucket, k,
-                                     ExtraArgs = meta,
-                                     Callback = ProgressPercentage(l))
-                        sys.stderr.write('\n')
+                        if show_progess:
+                            self.s3cl.upload_fileobj(f, self.bucket, k,
+                                         ExtraArgs = meta,
+                                         Callback = ProgressPercentage(l))
+                            sys.stderr.write('\n')
+                        else:
+                            self.s3cl.upload_fileobj(f, self.bucket, k,
+                                         ExtraArgs = meta)
+ 
                 else:
 
                     try:
@@ -851,7 +860,7 @@ class SmartS3Sync():
             self.logger.info('S3 bucket is up to date')
    
 
-    def sync_dir_fromS3(self, force = False):
+    def sync_dir_fromS3(self, force = False, show_progress = True):
         if force:
             needs_sync = self.queryS3(self.s3path[len(self.bucket) + 1:], 
                                  return_all_objects = True)            
@@ -934,7 +943,7 @@ class SmartS3Sync():
  
  
     
-    def sync_file_fromS3(self, force = False):
+    def sync_file_fromS3(self, force = False, show_progress = True):
         """
         Sync a file from an s3 bucket.
  
@@ -1006,28 +1015,35 @@ class SmartS3Sync():
         else:
             self.logger.info('sync verified')
 
-    def sync(self, interval = None, force = False, fromS3 = False):
+    def sync(self, interval = None, force = False, fromS3 = False, show_progress = True):
         """
         Complete a sync between a local directory or file and an s3 bucket.  
 
         Args:
             interval (float): sync interval in minutes.
+            force (boolean): force sync, ignore localcache.
+            fromS3 (boolean): direction of sync.
+            show_progress (boolean): show sync progress.
         """
         autosync = True
         while autosync:
             if fromS3:
                 self.logger.info('preparing to sync FROM S3')
                 if self.s3path.endswith('/'):
-                    self.sync_dir_fromS3(force = force)
+                    self.sync_dir_fromS3(force = force, 
+                                         show_progress = show_progress)
                 else:
-                    self.sync_file_fromS3(force = force)
+                    self.sync_file_fromS3(force = force,
+                                          show_progress = show_progress)
             else:
                 self.logger.info('preparing to sync TO S3')
                 if os.path.isfile(self.local):
-                    self.sync_file_toS3(force = force)
+                    self.sync_file_toS3(force = force, 
+                                        show_progress = show_progress)
 
                 elif os.path.isdir(self.local):
-                    self.sync_dir_toS3(force = force)
+                    self.sync_dir_toS3(force = force,
+                                       show_progress, show_progress)
 
                 else:
                     self.logger.critical(self.local + 'is not a file or a '
