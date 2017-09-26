@@ -1043,7 +1043,7 @@ class SmartS3Sync():
 
                 elif os.path.isdir(self.local):
                     self.sync_dir_toS3(force = force,
-                                       show_progress, show_progress)
+                                       show_progress = show_progress)
 
                 else:
                     self.logger.critical(self.local + 'is not a file or a '
