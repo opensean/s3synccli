@@ -4,7 +4,7 @@
 
 FROM fedora:25
 LABEL maintainer "Sean Landry, sean.d.landry@gmail.com, sean.landry@cellsignal.com"
-LABEL s3synccli.version="0.1.0" \
+LABEL s3synccli.version="0.2.0" \
       s3synccli.description="python tool to sync local directory or file with an s3 bucket while preserving metadata"
 
 RUN dnf install -y python3-boto3 python3-docopt python3-magic
@@ -18,5 +18,5 @@ RUN chmod -R o+rwx /s3sync/
 
 WORKDIR /s3sync
 
-ENTRYPOINT ["python3", "s3sync.py", "--localcache", "--localcache-dir", ".s3sync", "data"]
+ENTRYPOINT ["python3", "s3sync.py", "--localcache", "--localcache-dir", ".s3sync"]
 CMD []   

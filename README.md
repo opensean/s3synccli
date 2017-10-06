@@ -102,8 +102,9 @@ or build the container from source.
 ```/s3sync/data```
 
 The local directory to be synced to the s3 bucket should be mounted to the
- ```/s3sync/data``` directory of the container using the ```-v``` docker run 
-arg.  For example, ```-v /path/to/local/data:/s3sync/data```.
+container.  In the following examples the local data directory is mounted 
+to the ```/s3sync/data``` directory of the container using the ```-v``` 
+docker run arg.  For example, ```-v /path/to/local/data:/s3sync/data```.
 
 ```/s3sync/.s3ync```
 
@@ -175,6 +176,7 @@ Put everything together and run the container as an exectuble.  For example,
                  -v /path/to/local/dir/:/s3sync/data \
                  -v /path/to/local/cache:/s3sync/.s3sync \
                  opensean/s3synccli:latest \
+                 /s3sync/data \
                  s3bucket/path/to/dir/
 
 ```
@@ -194,6 +196,7 @@ mode.
                  -v /path/to/local/dir/:/s3sync/data \
                  -v /path/to/local/cache:/s3sync/.s3sync \
                  opensean/s3synccli:latest \
+                 /s3sync/data \
                  s3bucket/path/to/dir/ --interval 5
 
 ```
@@ -209,6 +212,7 @@ code directly by overiding the container entrypoint.  For example,
                 -v /path/to/local/dir/:/s3sync/data \
                 -v /path/to/local/cache:/s3sync/.s3sync \
                 opensean/s3synccli:latest \
+                /s3sync/data \
                 s3bucket/path/to/dir/ 
 
 ```
@@ -235,6 +239,7 @@ example running the container as an executable with the logging threshold set to
                  -v /path/to/local/cache:/s3sync/.s3sync \
                  -v /path/to/local/logs:/s3sync/logs \
                  opensean/s3synccli:latest \
+                 /s3sync/data \
                  s3bucket/path/to/dir/ \
                  --log DEBUG \
                  --log-dir /s3sync/logs
@@ -251,6 +256,7 @@ one can still customize the logging output to the console by setting the
                  -v /path/to/local/cache:/s3sync/.s3sync \
                  -v /path/to/local/logs:/s3sync/logs \
                  opensean/s3synccli:latest \
+                 /s3sync/data \
                  s3bucket/path/to/dir/ \
                  --log INFO
 
