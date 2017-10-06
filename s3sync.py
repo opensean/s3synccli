@@ -834,7 +834,7 @@ class SmartS3Sync():
                         rm_local_etag = meta['Metadata'].pop('ETag')
                         rm_local_path = meta['Metadata'].pop('local')
                         
-                        if show_progess:
+                        if show_progress:
                             self.s3cl.upload_fileobj(f, self.bucket, k,
                                          ExtraArgs = meta,
                                          Callback = ProgressPercentage(l))
