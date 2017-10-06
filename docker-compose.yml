@@ -4,7 +4,7 @@ services:
                 env_file: example.env
                 image: opensean/s3synccli:latest
                 container_name: s3sync00
-                command: example-s3-00-buc/home/docs --interval 5 --log-dir /s3sync/logs
+                command: /s3sync/data s3://example-s3-00-buc/home/docs --interval 5 --log-dir /s3sync/logs
                 volumes:
                         - /local/path/to/docs:/s3sync/data
                         - /local/path/to/logs:/s3sync/logs
@@ -15,7 +15,7 @@ services:
                 env_file: example.env
                 image: opensean/s3synccli:latest
                 container_name: s3sync01
-                command: example-s3-01-buc/dir1/docs --interval 5 --log-dir /s3sync/logs
+                command: /s3sync/data s3://example-s3-01-buc/dir1/docs --interval 5 --log-dir /s3sync/logs
                 volumes:
                         - /local/path/to/docs:/s3sync/data
                         - /local/path/to/logs:/s3sync/logs

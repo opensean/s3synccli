@@ -85,14 +85,14 @@ Options:
 ### grab the container
 
 ```
-    $ docker pull opensean/s3synccli:0.2.0
+$ docker pull opensean/s3synccli:0.2.0
 ```
 or build the container from source.
 
 ```
-    $ git clone https://github.com/opensean/s3synccli.git
-    $ cd s3synccli
-    $ docker build -t some_container_repo/s3synccli:lastest .
+$ git clone https://github.com/opensean/s3synccli.git
+$ cd s3synccli
+$ docker build -t some_container_repo/s3synccli:lastest .
 ```
 
 ### container structure
@@ -149,9 +149,9 @@ AWS credentials can be passed to the container as environment variables using a
 .env file with the following format:
 
 ```
-    AWS_ACCESS_KEY_ID=youraccesskey
-    AWS_SECRET_ACCESS_KEY=yoursecretaccesskey
-    AWS_DEFAULT_REGION=defaultregion(e.g. us-east-1)
+AWS_ACCESS_KEY_ID=youraccesskey
+AWS_SECRET_ACCESS_KEY=yoursecretaccesskey
+AWS_DEFAULT_REGION=defaultregion(e.g. us-east-1)
 ```
 
 The .env file uses the convention VAR=varvalue.  The .env file can be passed 
@@ -172,12 +172,12 @@ http://boto3.readthedocs.io/en/latest/guide/configuration.html
 Put everything together and run the container as an exectuble.  For example,
 
 ```
-    $ docker run --rm --env-file /path/to/env/.env -u 1000:1000 \
-                 -v /path/to/local/dir/:/s3sync/data \
-                 -v /path/to/local/cache:/s3sync/.s3sync \
-                 opensean/s3synccli:latest \
-                 /s3sync/data \
-                 s3bucket/path/to/dir/
+$ docker run --rm --env-file /path/to/env/.env -u 1000:1000 \
+             -v /path/to/local/dir/:/s3sync/data \
+             -v /path/to/local/cache:/s3sync/.s3sync \
+             opensean/s3synccli:latest \
+             /s3sync/data \
+             s3://s3bucket/path/to/dir/
 
 ```
 
@@ -192,12 +192,12 @@ is running.  Use the ```-d``` docker run arg to run the container in detached
 mode.
 
 ```
-    $ docker run --rm --env-file /path/to/env/.env -u 1000:1000 \
-                 -v /path/to/local/dir/:/s3sync/data \
-                 -v /path/to/local/cache:/s3sync/.s3sync \
-                 opensean/s3synccli:latest \
-                 /s3sync/data \
-                 s3bucket/path/to/dir/ --interval 5
+$ docker run --rm --env-file /path/to/env/.env -u 1000:1000 \
+             -v /path/to/local/dir/:/s3sync/data \
+             -v /path/to/local/cache:/s3sync/.s3sync \
+             opensean/s3synccli:latest \
+             /s3sync/data \
+             s3://s3bucket/path/to/dir/ --interval 5
 
 ```
 
@@ -207,20 +207,20 @@ A shell can be started in the container to experiment with the python program or
 code directly by overiding the container entrypoint.  For example,
 
 ```
-   $ docker run -it --rm --entrypoint bash --env-file /path/to/env/.env \ 
-                -u 1000:1000 \
-                -v /path/to/local/dir/:/s3sync/data \
-                -v /path/to/local/cache:/s3sync/.s3sync \
-                opensean/s3synccli:latest \
-                /s3sync/data \
-                s3bucket/path/to/dir/ 
+$ docker run -it --rm --entrypoint bash --env-file /path/to/env/.env \ 
+             -u 1000:1000 \
+             -v /path/to/local/dir/:/s3sync/data \
+             -v /path/to/local/cache:/s3sync/.s3sync \
+             opensean/s3synccli:latest \
+             /s3sync/data \
+             s3://s3bucket/path/to/dir/ 
 
 ```
 
 Once the shell session is active one can run the python code directly.
 
 ```
-   $ python3 s3sync.py data s3bucket/path/to/dir/ --localcache --localcache-dir .s3sync 
+$ python3 s3sync.py data s3bucket/path/to/dir/ --localcache --localcache-dir .s3sync 
 ```
 
 ### logging
@@ -233,16 +233,16 @@ example running the container as an executable with the logging threshold set to
 ```DEBUG``` and a directory to store the logs files generated.
 
 ```
-    $ docker run --rm --env-file /path/to/env/.env \
-                 -u 1000:1000 \
-                 -v /path/to/local/dir/:/s3sync/data \
-                 -v /path/to/local/cache:/s3sync/.s3sync \
-                 -v /path/to/local/logs:/s3sync/logs \
-                 opensean/s3synccli:latest \
-                 /s3sync/data \
-                 s3bucket/path/to/dir/ \
-                 --log DEBUG \
-                 --log-dir /s3sync/logs
+$ docker run --rm --env-file /path/to/env/.env \
+             -u 1000:1000 \
+             -v /path/to/local/dir/:/s3sync/data \
+             -v /path/to/local/cache:/s3sync/.s3sync \
+             -v /path/to/local/logs:/s3sync/logs \
+             opensean/s3synccli:latest \
+             /s3sync/data \ 
+             s3://s3bucket/path/to/dir/ \
+             --log DEBUG \
+             --log-dir /s3sync/logs
 ```
 
 **Note:** if the ```--log-dir``` arg is ommited no log files are generated but
@@ -250,15 +250,15 @@ one can still customize the logging output to the console by setting the
 ```--log``` arg.  For example,
 
 ```
-    $ docker run --rm --env-file /path/to/env/.env \
-                 -u 1000:1000 \
-                 -v /path/to/local/dir/:/s3sync/data \
-                 -v /path/to/local/cache:/s3sync/.s3sync \
-                 -v /path/to/local/logs:/s3sync/logs \
-                 opensean/s3synccli:latest \
-                 /s3sync/data \
-                 s3bucket/path/to/dir/ \
-                 --log INFO
+$ docker run --rm --env-file /path/to/env/.env \
+             -u 1000:1000 \
+             -v /path/to/local/dir/:/s3sync/data \
+             -v /path/to/local/cache:/s3sync/.s3sync \
+             -v /path/to/local/logs:/s3sync/logs \
+             opensean/s3synccli:latest \
+             /s3sync/data \
+             s3://s3bucket/path/to/dir/ \
+             --log INFO
 
 ```
 
@@ -295,44 +295,41 @@ container's environment.
 *docker-compose.yml*
 
 ```
-    version: '3'
-    services:
+version: '3'
+services:
         s3sync00:
                 env_file: example.env
                 image: opensean/s3synccli:latest
                 container_name: s3sync00
-                command: example-s3-00-buc/home/docs --interval 5 --log-dir /s3sync/logs
+                command: /s3sync/data s3://example-s3-00-buc/home/docs --interval 5 --log-dir /s3sync/logs
                 volumes:
                         - /local/path/to/docs:/s3sync/data
                         - /local/path/to/logs:/s3sync/logs
                         - /local/path/to/.s3sync:/s3sync/.s3sync
-               
                 user: $MY_USER:$MY_GROUP
 
         s3sync01:
                 env_file: example.env
                 image: opensean/s3synccli:latest
                 container_name: s3sync01
-                command: example-s3-01-buc/dir1/docs --interval 5 --log-dir /s3sync/logs
+                command: /s3sync/data s3://example-s3-01-buc/dir1/docs --interval 5 --log-dir /s3sync/logs
                 volumes:
                         - /local/path/to/docs:/s3sync/data
                         - /local/path/to/logs:/s3sync/logs
                         - /local/path/to/.s3sync:/s3sync/.s3sync
-               
                 user: $MY_USER:$MY_GROUP
-
 ```
 *.env*
 
 ```
-    MY_USER=1000
-    MY_GROUP=1000
+MY_USER=1000
+MY_GROUP=1000
 ```
 
 *example.env*
 
 ```
-    AWS_ACCESS_KEY_ID=youraccesskey
-    AWS_SECRET_ACCESS_KEY=yoursecretaccesskey
-    AWS_DEFAULT_REGION=defaultregion(e.g. us-east-1)
+AWS_ACCESS_KEY_ID=youraccesskey
+AWS_SECRET_ACCESS_KEY=yoursecretaccesskey
+AWS_DEFAULT_REGION=defaultregion(e.g. us-east-1)
 ```
