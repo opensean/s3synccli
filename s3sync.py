@@ -73,6 +73,11 @@ Options:
     --log-dir LOGDIR             file path to directory in which to store the 
                                  logs. No log files are created if this option
                                  is ommited.
+
+    --upload-extra-args  ARGS    list of extra args to be included with 
+                                 call to boto3 to upload in the format: 
+                                 Key=Value,Key=Value,Key=Value,...
+
     -h --help                    show this screen.
 """ 
 __author__= "Sean Landry"
@@ -265,7 +270,9 @@ class SmartS3Sync():
                  localcache = False,
                  localcache_dir = None,
                  localcache_fname = None,
-                 log = logging.INFO, library = logging.CRITICAL):
+                 log = logging.INFO, 
+                 library = logging.CRITICAL,
+                 upload_extra_args = None):
         
         self.local = local
         self.s3path = s3path
@@ -283,7 +290,7 @@ class SmartS3Sync():
         self.localcache = localcache
         self.localcache_fname = self.init_localcache_fname(localcache_fname)
         self.localcache_dir = self.init_localcache(localcache_dir, localcache)
-        
+        self.upload_extra_args = upload_extra_args
 
     def init_logger(self, log = logging.DEBUG, library = logging.CRITICAL):
         ## prevent library loggers from printing to log by setting level 
@@ -687,6 +694,27 @@ class SmartS3Sync():
                     needs_sync = OrderedDict({k:v})
         return needs_sync
 
+    
+    def merge_dict(self, dict1 = {}, dict2 = {}):
+        """
+        Merge two dictionaries.
+        """
+        larger = {}
+        smaller = {}
+
+        if len(dict1) > len(dict2):
+            larger = dict1
+            smaller = dict2
+        else:
+            larger = dict2
+            smaller = dict1
+
+        for k,v in smaller.items():
+            larger[k] = v
+
+        return larger
+
+
     def sync_file_toS3(self, force = False, show_progress = True):
         """
         Sync a local file with to an s3 bucket.
@@ -739,6 +767,9 @@ class SmartS3Sync():
                     meta['Metadata']['uid'] = self.uid
                 if self.gid:
                     meta['Metadata']['gid'] = self.gid
+
+                ## merge with exta upload args
+                meta = self.merge_dict(self.extra_upload_args, meta)
 
                 try:
                     self.logger.info("upload: " + self.local + " to " + key)
@@ -817,6 +848,8 @@ class SmartS3Sync():
                 ## copy v becuase intact dict is needed to verify sync
                 meta['Metadata'] = v.copy()
 
+                ## merge with exta upload args
+                meta = self.merge_dict(self.extra_upload_args, meta)
 
                 ## check for uid & gid
                 if self.uid:
@@ -1118,6 +1151,9 @@ def main(options):
         raise RuntimeError('s3 path not valid format')
 
 
+    e_args = options['--upload-extra-args'].split(',')
+
+    extra_upload_args = {i.split('=')[0]:i.split('=')[1] for i in e_args}
 
     s3_sync = SmartS3Sync(local = local,
                         s3path = s3path, 
@@ -1130,8 +1166,8 @@ def main(options):
                         localcache = options['--localcache'],
                         localcache_dir = options['--localcache-dir'],
                         localcache_fname = options['--localcache-fname'],
-                        log = numeric_level)
-
+                        log = numeric_level,
+                        upload_extra_args = extra_upload_args)
     s3_sync.sync(interval = options['--interval'], 
                  force = options['--force'],
                  fromS3 = fromS3)
