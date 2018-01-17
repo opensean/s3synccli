@@ -28,6 +28,12 @@ Usage:
     s3sync.py <path> <path> [options]
     s3sync.py -h | --help 
 
+Other notes
+
+- boto3 sends MD5 in each header when doing multipart upload, therefore sync
+  does not have to be verified upon upload.
+- if md5chksum is included in object metadata the download can be verified.
+
 Options: 
     <path>                       a local path or s3 bucket path
 
@@ -94,6 +100,7 @@ from botocore.exceptions import ClientError
 from collections import OrderedDict
 import os
 import hashlib
+import base64
 from binascii import unhexlify
 import threading
 import magic
@@ -137,16 +144,17 @@ class S3SyncUtility():
                     hash_md5.update(chunk)
                     md5Lst.append(hash_md5.hexdigest())
                     blockcount += 1
+            return base64.b64encode(hash_md5.digest()).decode()
             
-            if blockcount <= 1:
-                return hash_md5.hexdigest()
-            else:
-                ## calculate aws multipart upload etag md5 equivalent
-                c = ''.join(md5Lst)
-                c = unhexlify(c)
-                hash_md5 = hashlib.md5()
-                hash_md5.update(c)
-                return hash_md5.hexdigest() + '-' + str(blockcount)
+#            if blockcount <= 1:
+#                return hash_md5.hexdigest()
+#            else:
+#                ## calculate aws multipart upload etag md5 equivalent
+#                c = ''.join(md5Lst)
+#                c = unhexlify(c)
+#                hash_md5 = hashlib.md5()
+#                hash_md5.update(c)
+#                return hash_md5.hexdigest() + '-' + str(blockcount)
         else:
             ## md5sum dev/null
             return "d41d8cd98f00b204e9800998ecf8427e"
@@ -162,17 +170,17 @@ class S3SyncUtility():
             (dict): in the format {'local/fileordir':{'uid':'1000', 'mode':'509', etc...}}
         """
         mystat = os.stat(key)
-        keyLst = ["uid", "gid", "mode", "mtime", "size", "ETag", "local"]
+        keyLst = ["uid", "gid", "mode", "mtime", "size", "md5chksum", "local", "ETag"]
 
         ## if md5sum False avoid calculating md5sum
         if md5sum:
             statLst = [str(mystat.st_uid), str(mystat.st_gid),
                                     str(mystat.st_mode), str(int(mystat.st_mtime)),
-                                    str(mystat.st_size), str(self.md5(key)), key]
+                                    str(mystat.st_size), str(self.md5(key)), key, '']
         else:
             statLst = [str(mystat.st_uid), str(mystat.st_gid),
                                     str(mystat.st_mode), str(int(mystat.st_mtime)),
-                                    str(mystat.st_size), '', key]
+                                    str(mystat.st_size), '', key, '']
         
         return {a:b for a,b in zip(keyLst, statLst)}
 
@@ -272,7 +280,7 @@ class SmartS3Sync():
                  localcache_fname = None,
                  log = logging.INFO, 
                  library = logging.CRITICAL,
-                 upload_extra_args = None):
+                 extra_upload_args = None):
         
         self.local = local
         self.s3path = s3path
@@ -290,7 +298,7 @@ class SmartS3Sync():
         self.localcache = localcache
         self.localcache_fname = self.init_localcache_fname(localcache_fname)
         self.localcache_dir = self.init_localcache(localcache_dir, localcache)
-        self.upload_extra_args = upload_extra_args
+        self.extra_upload_args = extra_upload_args
 
     def init_logger(self, log = logging.DEBUG, library = logging.CRITICAL):
         ## prevent library loggers from printing to log by setting level 
@@ -768,9 +776,10 @@ class SmartS3Sync():
                 if self.gid:
                     meta['Metadata']['gid'] = self.gid
 
-                ## merge with exta upload args
-                meta = self.merge_dict(self.extra_upload_args, meta)
-
+                if self.extra_upload_args:
+                    ## merge with exta upload args
+                    meta = self.merge_dict(self.extra_upload_args, meta)
+                meta["ContentMD5"] = meta['Metadata']['md5chksum']
                 try:
                     self.logger.info("upload: " + self.local + " to " + key)
                     if show_progress:
@@ -888,7 +897,7 @@ class SmartS3Sync():
                         self.logger.exception("exiting")
                         sys.exit()
             
-            self.verify_sync(needs_sync)
+            #self.verify_sync(needs_sync)
         else:
             self.logger.info('S3 bucket is up to date')
    
@@ -1151,9 +1160,12 @@ def main(options):
         raise RuntimeError('s3 path not valid format')
 
 
-    e_args = options['--upload-extra-args'].split(',')
-
-    extra_upload_args = {i.split('=')[0]:i.split('=')[1] for i in e_args}
+    try:
+        e_args = options['--upload-extra-args'].split(',')
+    
+        extra_upload_args = {i.split('=')[0]:i.split('=')[1] for i in e_args}
+    except AttributeError:
+        extra_upload_args = None
 
     s3_sync = SmartS3Sync(local = local,
                         s3path = s3path, 
@@ -1167,7 +1179,7 @@ def main(options):
                         localcache_dir = options['--localcache-dir'],
                         localcache_fname = options['--localcache-fname'],
                         log = numeric_level,
-                        upload_extra_args = extra_upload_args)
+                        extra_upload_args = extra_upload_args)
     s3_sync.sync(interval = options['--interval'], 
                  force = options['--force'],
                  fromS3 = fromS3)
